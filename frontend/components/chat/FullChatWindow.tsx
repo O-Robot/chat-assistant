@@ -34,6 +34,8 @@ import {
 } from "@headlessui/react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { useToast } from "@/hooks/use-toast";
 
 interface FullChatWindowProps {
   initialQuestion?: string;
@@ -45,6 +47,7 @@ export function FullChatWindow({
   onClose,
 }: FullChatWindowProps) {
   const router = useRouter();
+  const { toast } = useToast();
 
   const { user, setUser, messages, receiveMessage } = useChatStore();
   const [input, setInput] = useState(initialQuestion);
@@ -62,6 +65,8 @@ export function FullChatWindow({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  const [textareaEl, setTextareaEl] = useState<HTMLTextAreaElement | null>();
+
   // Submit user form
   const handleUserSubmit = async (e: any) => {
     e.preventDefault();
@@ -72,7 +77,11 @@ export function FullChatWindow({
       !form.phone ||
       !form.country
     )
-      return;
+      return toast({
+        title: "Missing fields",
+        description: "Please fill all required info.",
+        variant: "destructive",
+      });
 
     const res = await fetch("http://localhost:3001/api/users", {
       method: "POST",
@@ -150,39 +159,77 @@ export function FullChatWindow({
   // Form for new user
   if (!user?.email) {
     return (
-      <div className="flex flex-col items-center justify-center h-full w-full p-4">
-        <form onSubmit={handleUserSubmit} className="space-y-4 w-full max-w-md">
-          <div className="flex gap-2">
-            <Input
-              placeholder="First Name"
-              value={form.firstName}
-              onChange={(e) => setForm({ ...form, firstName: e.target.value })}
-            />
-            <Input
-              placeholder="Last Name"
-              value={form.lastName}
-              onChange={(e) => setForm({ ...form, lastName: e.target.value })}
-            />
-          </div>
-          <Input
-            type="email"
-            placeholder="Email"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-          />
-          <PhoneInput
-            country="ng"
-            value={form.phone}
-            onChange={(phone: string, country: any) =>
-              setForm({ ...form, phone, country: country.name })
-            }
-            containerClass="!rounded-md"
-            inputClass="!w-full"
-          />
-          <Button type="submit" className="w-full">
-            Continue
-          </Button>
-        </form>
+      <div className="fixed inset-0 bg-background  flex items-center justify-center z-50">
+        <Card className="glass-morphism shadow-xl border-white/20">
+          <CardHeader>
+            <CardTitle className="text-primary-text flex items-center justify-center gap-2">
+              Let’s get to know you 👋
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={(e) => handleUserSubmit(e)} className="space-y-6 ">
+              <div className="flex gap-4">
+                <Input
+                  placeholder="First Name"
+                  value={form.firstName}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      firstName: e.target.value,
+                    })
+                  }
+                  required
+                  className="glass-morphism border-white/20 text-primary-text/80 placeholder:text-primary-text/50"
+                />
+                <Input
+                  placeholder="Last Name"
+                  value={form.lastName}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      lastName: e.target.value,
+                    })
+                  }
+                  required
+                  className="glass-morphism border-white/20 text-primary-text/80 placeholder:text-primary-text/50"
+                />
+              </div>
+
+              <div>
+                <Input
+                  type="email"
+                  placeholder="Your Email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  className="glass-morphism border-white/20 text-primary-text/80 placeholder:text-primary-text/50"
+                  required
+                />
+              </div>
+              <div>
+                <PhoneInput
+                  country="ng"
+                  value={form.phone}
+                  onChange={(phone: string, country: any) => {
+                    setForm({ ...form, phone, country: country.name });
+                  }}
+                  containerClass="!rounded-md"
+                  inputClass="glass-morphism !py-3 !border-gray-300 border-none !w-[100%]"
+                  dropdownClass="text-primary-text/80
+                  "
+                  inputProps={{ required: true }}
+                />
+              </div>
+
+              <Button
+                type="submit"
+                className="w-full glass-morphism  text-primary-text/80 font-bold hover:text-primary hover:animate-glow hover:shadow-lg"
+                size="lg"
+              >
+                Continue
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -293,7 +340,11 @@ export function FullChatWindow({
             >
               {msg.content}
               <span className="mt-1 text-[11px] text-gray-500 self-end">
-                {msg?.formattedTime}
+                {new Date(msg.timestamp).toLocaleTimeString("en-GB", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: true,
+                })}
               </span>
             </div>
             <img
@@ -308,28 +359,76 @@ export function FullChatWindow({
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="p-4 flex items-center border-t border-primary-text/10">
-        <textarea
-          rows={1}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={async (e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              await handleSend();
-            }
+      {/* Input Section */}
+      <div className={`px-4 py-5 flex items-center justify-center `}>
+        <div
+          className={`max-w-4xl w-full mx-auto relative shadow-xl border border-primary px-3 py-2 flex transition-all duration-300 rounded-2xl ease-in-out ${
+            input.trim()
+              ? "flex-col rounded-2xl"
+              : "flex-row items-center rounded-4xl"
+          }`}
+          style={{
+            transitionProperty:
+              "border-radius, background-color, box-shadow, transform",
           }}
-          placeholder="Ask me anything..."
-          className="flex-1 resize-none p-2 rounded-lg border"
-        />
-        <button
-          onClick={handleSend}
-          disabled={!input.trim() || loading}
-          className="ml-2 p-2 rounded-full bg-blue-500 text-white"
         >
-          <ArrowUp size={16} />
-        </button>
+          <div className="flex items-center w-full pr-3">
+            <textarea
+              ref={setTextareaEl as any}
+              rows={1}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onInput={(e) => {
+                const ta = e.currentTarget as HTMLTextAreaElement;
+                const maxHeight = 200;
+                ta.style.height = "auto";
+                const newHeight = Math.min(ta.scrollHeight, maxHeight);
+                ta.style.height = `${newHeight}px`;
+                ta.style.overflowY =
+                  ta.scrollHeight > maxHeight ? "auto" : "hidden";
+              }}
+              onKeyDown={async (e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  await handleSend();
+                  if (textareaEl) {
+                    textareaEl.style.height = "auto";
+                    textareaEl.style.overflowY = "hidden";
+                  }
+                }
+              }}
+              placeholder="Ask me anything..."
+              className="w-full resize-none bg-transparent p-2 pr-3 mb-1 text-base text-skill-text placeholder-primary-text/50 focus:outline-none focus:ring-0 max-h-50 overflow-hidden"
+              style={{
+                minHeight: "10px",
+                paddingBottom: input.trim() ? "8px" : "4px",
+              }}
+            />
+          </div>
+
+          <div
+            className={`flex ${
+              input.trim() ? "justify-end w-full " : "items-end"
+            }`}
+          >
+            <button
+              onClick={async () => await handleSend()}
+              aria-label="Send message"
+              disabled={!input.trim()}
+              className={`ml-2 flex items-center justify-center rounded-full p-2 transition-all duration-200 ${
+                input.trim()
+                  ? "bg-primary/80 text-white hover:opacity-90 cursor-pointer"
+                  : "text-gray-400 cursor-not-allowed"
+              }`}
+            >
+              <ArrowUp size={16} />
+            </button>
+          </div>
+        </div>
       </div>
+      <p className="text-center text-xs text-gray-500 py-2">
+        © {new Date().getFullYear()} Ogooluwani Adewale
+      </p>
     </div>
   );
 }
