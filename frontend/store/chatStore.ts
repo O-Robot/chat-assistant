@@ -11,6 +11,7 @@ interface ChatState {
   selectedVisitorId: string | null;
   role: UserRole | null;
   setUser: (user: User) => void;
+  addMessage: (message: Message) => void;
   sendMessage: (message: Omit<Message, "id" | "timestamp">) => void;
   receiveMessage: (message: Message) => void;
   setSelectedVisitorId: (visitorId: string | null) => void;
@@ -232,4 +233,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       storage.removeItem(storageKey);
     }
   },
+
+  addMessage: (message: any) =>
+    set((state) => ({
+      messages: [...state.messages, message],
+    })),
 }));

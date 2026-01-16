@@ -14,6 +14,7 @@ export type User = {
 
 export type Visitor = User & {
   role: UserRole.VISITOR;
+  conversationId: string;
   ipAddress?: string;
   lastSeen?: number;
 };
