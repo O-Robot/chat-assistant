@@ -6,6 +6,7 @@ export type Message = {
   senderId: string;
   content: string;
   timestamp: number;
+  formattedTime?: string;
   status?: "sent" | "delivered" | "read";
 };
 

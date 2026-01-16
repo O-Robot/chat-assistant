@@ -1,32 +1,42 @@
-// backend/db.js
 import sqlite3 from "sqlite3";
 import { open } from "sqlite";
 
-// Initialize and open SQLite DB
 export async function openDB() {
   const db = await open({
     filename: "./db/data.sqlite",
     driver: sqlite3.Database,
   });
 
-  // Create users table if it doesn't exist
+  // Users table
   await db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       firstName TEXT,
       lastName TEXT,
-      email TEXT,
+      email TEXT UNIQUE,
       phone TEXT,
       country TEXT
     )
   `);
 
-  // Create conversations table if it doesn't exist
+  // Conversations table
   await db.exec(`
     CREATE TABLE IF NOT EXISTS conversations (
       id TEXT PRIMARY KEY,
       userId TEXT,
+      status TEXT DEFAULT 'open', -- open / closed / resolved
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Messages table
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY,
+      conversationId TEXT,
+      senderId TEXT,
+      content TEXT,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
