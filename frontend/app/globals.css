@@ -1,26 +1,189 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Agustina Regular";
+  font-style: normal;
+  font-weight: normal;
+  src: local("Agustina Regular"), url("/fonts/Agustina.woff") format("woff");
+}
+
+html {
+  transition: background-color 0.3s, color 0.3s;
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8eff4;
+  --skill-text: #231942;
+  --primary: #5e548e;
+  --primary-text: #231942;
+  --secondary-text: #655e7a;
+  --link-active: #231942;
+  --link-inactive: #535252;
+  --accent: #e0b1cb;
+  --linear: linear-gradient(110deg, #7800ff, #f07 35%, #f9b11f 45%, #7800ff 90%)
+    0 0 /300% 100%;
+}
+
+@variant dark {
+  --background: #00072d;
+  --skill-text: #e6e6e6;
+  --primary: #be95c4;
+  --primary-text: #f8eff4;
+  --secondary-text: #a8a0b8;
+  --link-active: #fff;
+  --link-inactive: #f8eff4;
+  --accent: #ff00ff;
+  --linear: linear-gradient(110deg, #7800ff, #f07 35%, #f9b11f 45%, #7800ff 90%)
+    0 0 /300% 100%;
 }
 
 @theme inline {
   --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-skill-text: var(--skill-text);
+  --color-primary: var(--primary);
+  --color-primary-text: var(--primary-text);
+  --color-secondary-text: var(--secondary-text);
+  --color-link-active: var(--link-active);
+  --color-link-inactive: var(--link-inactive);
+  --color-accent: var(--accent);
+  --color-linear: var(--linear);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* others */
+
+.header .logo {
+  display: block;
+  float: left;
+  font-size: 1.5em;
+  text-decoration: none;
+  margin-top: 10px;
+  line-height: normal;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-20px);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@keyframes glow {
+  0%,
+  100% {
+    box-shadow: 0 0 20px var(--accent);
+  }
+  50% {
+    box-shadow: 0 0 40px var(--accent);
+  }
 }
+
+@keyframes liquidFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-glow {
+  animation: glow 2s ease-in-out infinite alternate;
+}
+
+.liquid-gradient {
+  background: var(--linear);
+  background-size: 400% 400%;
+  animation: liquidFlow 4s ease infinite;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.logo-name {
+  font-family: "Agustina Regular";
+  font-weight: bold;
+  padding: 0 10px;
+  color: var(--skill-text);
+}
+
+.glass-morphism {
+  background: rgba(75, 60, 60, 0.038) !important;
+  backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+}
+
+.neuro-morphism {
+  background: #1a1a1a;
+  box-shadow: 20px 20px 60px #0d0d0d, -20px -20px 60px #272727;
+}
+
+.dev-icons {
+  padding-left: 0;
+  list-style: none;
+  font-size: 3rem;
+  margin-bottom: 0px;
+  margin-top: 0px;
+  text-align: center;
+}
+
+@keyframes spin-border {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Scroll Bar */
+/* width */
+::-webkit-scrollbar {
+  width: 4px;
+  max-height: 10px;
+}
+
+/* Track */
+::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 5px !important;
+}
+
+/* Handle */
+::-webkit-scrollbar-thumb {
+  background: var(--primary-text) !important;
+  border-radius: 5px !important;
+}
+
+/* Handle on hover */
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-text) !important;
+  border-radius: 5px !important;
+  cursor: pointer;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+} 
