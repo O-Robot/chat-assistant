@@ -213,7 +213,7 @@ export function FullChatWindow({
                     setForm({ ...form, phone, country: country.name });
                   }}
                   containerClass="!rounded-md"
-                  inputClass="glass-morphism !py-3 !border-gray-300 border-none !w-[100%]"
+                  inputClass="glass-morphism !py-3 !border-gray-300 border-none !w-[100%] text-primary-text/80! placeholder:text-primary-text/50"
                   dropdownClass="text-primary-text/80
                   "
                   inputProps={{ required: true }}
@@ -233,8 +233,6 @@ export function FullChatWindow({
       </div>
     );
   }
-
-  console.log({ messages });
 
   // Chat window
   return (
