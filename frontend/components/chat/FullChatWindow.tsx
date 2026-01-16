@@ -227,7 +227,7 @@ export function FullChatWindow({
         socket.off("user_stopped_typing");
       };
     })();
-  }, [user]); // run when current user changes
+  }, [user]);
 
   const handleTyping = () => {
     const socket = getSocket();
@@ -315,7 +315,6 @@ export function FullChatWindow({
       </div>
     );
   }
-  console.log(typingUsers);
   // Chat window
   return (
     <div className="flex flex-col h-full w-full">

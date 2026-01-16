@@ -70,40 +70,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setUser: (user) => {
     set({ user });
 
-    // Set role and load stored messages
-    const role = user.role as StorageRole;
-    const storage =
-      role === "admin" ? getStorage("local") : getStorage("session");
-    const storageKey = STORAGE_KEYS[role];
-
-    if (storage && storageKey) {
-      const storedData = storage.getItem(storageKey);
-      const storedMessages = parseStorageData(storedData);
-
-      if (role === "admin") {
-        // For admin, organize messages by conversation
-        const conversations = storedMessages.reduce((acc, message) => {
-          const conversationId = message.conversationId;
-          if (!acc[conversationId]) {
-            acc[conversationId] = [];
-          }
-          acc[conversationId].push(message);
-          return acc;
-        }, {} as Record<string, Message[]>);
-
-        set((state) => ({ ...state, conversations, messages: [] }));
-      } else {
-        // For visitor, just set messages
-        set((state) => ({
-          ...state,
-          messages: storedMessages,
-          conversations: {},
-        }));
-      }
-    }
-
     const socket = getSocket();
-    socket.emit("user_join", user);
+
+    if (
+      user?.id &&
+      user?.firstName &&
+      user?.lastName &&
+      user?.email &&
+      user?.role
+    ) {
+      socket.emit("user_join", {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
+      });
+    }
 
     // Set up online status listeners
     socket.on("visitor_online", (visitorId: string) => {
