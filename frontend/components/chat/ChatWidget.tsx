@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ChatWindow } from "@/components/visitor/ChatWindow";
+import { ChatWindow } from "@/components/widget/ChatWindow";
 import { useChatStore } from "@/store/chatStore";
 import { useMessageNotifications } from "@/hooks/useMessageNotifications";
-import { Avatar } from "@/components/visitor/Avatar";
+import { Avatar } from "@/components/widget/Avatar";
 import { chatConfig } from "@/config/chat";
 
 export function ChatWidget() {

@@ -22,7 +22,7 @@ export function ChatWindow({ conversationId, onClose }: ChatWindowProps) {
   }, [conversationMessages]);
 
   return (
-    <div className="fixed bottom-0 right-0 w-full h-[calc(100vh-4rem)] sm:w-[380px] sm:h-[600px] sm:bottom-6 sm:right-6 bg-gray-100 dark:bg-gray-900 rounded-lg shadow-xl flex flex-col overflow-hidden transition-all duration-300 ease-in-out">
+    <div className="fixed bottom-0 right-0 w-full h-[calc(100vh-4rem)] sm:w-95 sm:h-150 sm:bottom-6 sm:right-6 bg-gray-100 dark:bg-gray-900 rounded-lg shadow-xl flex flex-col overflow-hidden transition-all duration-300 ease-in-out">
       {/* Header */}
       <div className="flex items-center px-4 py-3 bg-blue-500 dark:bg-gray-800">
         <div className="flex items-center flex-1 min-w-0">

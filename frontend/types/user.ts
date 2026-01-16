@@ -2,10 +2,14 @@ import { Status, UserRole } from "@/types";
 
 export type User = {
   id: string;
-  name: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  country: string;
   role: UserRole;
-  avatarUrl?: string;
-  status?: Status;
+  status: Status;
+  avatarUrl: string;
 };
 
 export type Visitor = User & {

@@ -10,6 +10,7 @@
     "dev": "concurrently \"cd frontend && npm run dev\" \"cd backend && npm run start\""
   },
   "dependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "react-phone-input-2": "^2.15.1"
   }
 }
