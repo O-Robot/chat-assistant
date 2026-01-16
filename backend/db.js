@@ -15,7 +15,8 @@ export async function openDB() {
       lastName TEXT,
       email TEXT UNIQUE,
       phone TEXT,
-      country TEXT
+      country TEXT,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -25,7 +26,9 @@ export async function openDB() {
       id TEXT PRIMARY KEY,
       userId TEXT,
       status TEXT DEFAULT 'open', -- open / closed / resolved
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      closedAt DATETIME,
+      FOREIGN KEY (userId) REFERENCES users(id)
     )
   `);
 
@@ -36,7 +39,8 @@ export async function openDB() {
       conversationId TEXT,
       senderId TEXT,
       content TEXT,
-      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (conversationId) REFERENCES conversations(id)
     )
   `);
 

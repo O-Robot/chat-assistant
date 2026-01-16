@@ -10,8 +10,12 @@ interface ChatState {
   isChatFocused: boolean;
   selectedVisitorId: string | null;
   role: UserRole | null;
+  typingUsers: Set<string>;
+  startTyping: (userId: string) => void;
+  stopTyping: (userId: string) => void;
   setUser: (user: User) => void;
   addMessage: (message: Message) => void;
+  clearMessages: () => void;
   sendMessage: (message: Omit<Message, "id" | "timestamp">) => void;
   receiveMessage: (message: Message) => void;
   setSelectedVisitorId: (visitorId: string | null) => void;
@@ -160,43 +164,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     socket.emit("send_message", message);
   },
 
-  receiveMessage: (message) => {
-    const { user } = get();
-    if (!user) return;
-
-    if (user.role === "admin") {
-      set((state) => {
-        const newConversations = {
-          ...state.conversations,
-          [message.conversationId]: [
-            ...(state.conversations[message.conversationId] || []),
-            message,
-          ],
-        };
-
-        // Persist to storage for admin
-        const storage = getStorage("local");
-        if (storage) {
-          const allMessages = Object.values(newConversations).flat();
-          storage.setItem(STORAGE_KEYS.admin, stringifyData(allMessages));
-        }
-
-        return { conversations: newConversations };
-      });
-    } else {
-      set((state) => {
-        const newMessages = [...state.messages, message];
-
-        // Persist to storage for visitor
-        const storage = getStorage("session");
-        if (storage) {
-          storage.setItem(STORAGE_KEYS.visitor, stringifyData(newMessages));
-        }
-
-        return { messages: newMessages };
-      });
-    }
-  },
+  receiveMessage: (msg) =>
+    set((state) => ({
+      messages: [...state.messages, msg],
+    })),
 
   updateOnlineStatus: (visitorId, isOnline) => {
     set((state) => {
@@ -238,4 +209,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({
       messages: [...state.messages, message],
     })),
+
+  clearMessages: () => set({ messages: [] }),
+
+  typingUsers: new Set(),
+
+  startTyping: (userId) =>
+    set((state) => {
+      const newSet = new Set(state.typingUsers);
+      newSet.add(userId);
+      return { typingUsers: newSet };
+    }),
+
+  stopTyping: (userId) =>
+    set((state) => {
+      const newSet = new Set(state.typingUsers);
+      newSet.delete(userId);
+      return { typingUsers: newSet };
+    }),
 }));

@@ -8,6 +8,7 @@ export type Message = {
   timestamp: number;
   formattedTime?: string;
   status?: "sent" | "delivered" | "read";
+  sender?: any;
 };
 
 export type Conversation = {

@@ -36,7 +36,7 @@ export default function VisitorsPage() {
 
   const handleQuestionClick = (question: string) => {
     setPendingQuestion(question);
-    setIsChatMode(true); // switch to chat mode
+    setIsChatMode(true);
   };
   useEffect(() => {
     const storedUser = getUserCookie();
@@ -62,7 +62,6 @@ export default function VisitorsPage() {
             ...data.user,
             role: UserRole.VISITOR,
             status: Status.ONLINE,
-            avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.user.id}&backgroundColor=b6e3f4`,
           });
           setUserCookie(data.user);
 

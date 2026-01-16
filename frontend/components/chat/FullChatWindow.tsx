@@ -36,6 +36,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { getSocket } from "@/lib/socket";
 
 interface FullChatWindowProps {
   initialQuestion?: string;
@@ -49,7 +50,16 @@ export function FullChatWindow({
   const router = useRouter();
   const { toast } = useToast();
 
-  const { user, setUser, messages, receiveMessage } = useChatStore();
+  const {
+    user,
+    setUser,
+    messages,
+    receiveMessage,
+    clearMessages,
+    startTyping,
+    stopTyping,
+    typingUsers,
+  } = useChatStore();
   const [input, setInput] = useState(initialQuestion);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
@@ -60,12 +70,56 @@ export function FullChatWindow({
     country: "",
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  let typingTimeout: NodeJS.Timeout;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   const [textareaEl, setTextareaEl] = useState<HTMLTextAreaElement | null>();
+
+  useEffect(() => {
+    const user = getUserCookie();
+    const conversationId = getConversationCookie();
+
+    if (!user?.id) {
+      clearMessages();
+      setUser({
+        id: "",
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        country: "",
+        role: UserRole.VISITOR,
+        status: Status.OFFLINE,
+        avatarUrl: "",
+      });
+      return;
+    }
+
+    if (!conversationId) {
+      clearMessages();
+      setUser(user);
+      return;
+    }
+
+    fetch(`http://localhost:3001/api/conversations/${conversationId}/messages`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Conversation not found");
+        return res.json();
+      })
+      .then((msgs: Message[]) => {
+        clearMessages();
+        msgs.forEach(receiveMessage);
+        setUser(user);
+      })
+      .catch(() => {
+        // conversation invalid or closed
+        clearMessages();
+        removeConversationCookie();
+      });
+  }, []);
 
   // Submit user form
   const handleUserSubmit = async (e: any) => {
@@ -100,7 +154,7 @@ export function FullChatWindow({
       conversationId: data.conversationId,
       role: UserRole.VISITOR,
       status: Status.ONLINE,
-      avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.userId}&backgroundColor=b6e3f4`,
+      avatarUrl: ``,
     };
 
     setUser(visitor);
@@ -132,17 +186,16 @@ export function FullChatWindow({
     setLoading(false);
   };
 
-  // Close conversation button
   const handleCloseConversation = () => {
     removeConversationCookie();
+    clearMessages();
     onClose();
-    // optionally emit socket to notify admin
   };
 
-  // End session button
   const handleEndSession = () => {
     removeConversationCookie();
     removeUserCookie();
+    clearMessages();
     setUser({
       id: "",
       firstName: "",
@@ -156,6 +209,35 @@ export function FullChatWindow({
     });
   };
 
+  useEffect(() => {
+    (async () => {
+      const socket = (await import("@/lib/socket")).getSocket();
+
+      socket.on("user_typing", (typingUser: { id: string }) => {
+        if (typingUser.id !== user?.id) startTyping(typingUser.id);
+      });
+
+      socket.on("user_stopped_typing", (typingUser: { id: string }) => {
+        if (typingUser.id !== user?.id) stopTyping(typingUser.id);
+      });
+
+      // cleanup
+      return () => {
+        socket.off("user_typing");
+        socket.off("user_stopped_typing");
+      };
+    })();
+  }, [user]); // run when current user changes
+
+  const handleTyping = () => {
+    const socket = getSocket();
+    socket.emit("typing_start");
+
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => {
+      socket.emit("typing_stop");
+    }, 1500);
+  };
   // Form for new user
   if (!user?.email) {
     return (
@@ -233,7 +315,7 @@ export function FullChatWindow({
       </div>
     );
   }
-
+  console.log(typingUsers);
   // Chat window
   return (
     <div className="flex flex-col h-full w-full">
@@ -318,25 +400,35 @@ export function FullChatWindow({
           <div
             key={i}
             className={`flex max-w-[80%] md:max-w-[60%] min-w-20 rounded-2xl px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap wrap-break-word text-base items-end gap-3 ${
-              msg.senderId === user.id
-                ? "ml-auto justify-end text-right"
-                : "mr-auto justify-start text-left flex-row-reverse"
+              msg?.sender?.id || msg?.senderId === user.id
+                ? "ml-auto text-right flex-row-reverse"
+                : "mr-auto justify-start text-left flex-row"
             }`}
             style={{
               wordBreak: "break-word",
               overflowWrap: "anywhere",
             }}
           >
+            <img
+              className="w-7! h-7! rounded-full object-cover"
+              src={
+                msg?.sender?.id || msg?.senderId === user.id
+                  ? `https://api.dicebear.com/9.x/notionists-neutral/svg?seed=${user.id}`
+                  : "/images/logo.png"
+              }
+              alt="avatar"
+            />
             {/* bubble box */}
             <div
               className={`relative inline-flex flex-col max-w-[85%] md:max-w-[70%] min-w-12 rounded-2xl px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap text-base shadow-sm 
        ${
-         msg.senderId === user.id
+         msg?.sender?.id || msg?.senderId === user.id
            ? "glass-morphism text-primary-text"
            : "bg-white/60 text-gray-900 border border-gray-200"
        }`}
             >
               {msg.content}
+
               <span className="mt-1 text-[11px] text-gray-500 self-end">
                 {new Date(msg.timestamp).toLocaleTimeString("en-GB", {
                   hour: "2-digit",
@@ -345,15 +437,28 @@ export function FullChatWindow({
                 })}
               </span>
             </div>
-            <img
-              className="w-7! h-7! rounded-full object-cover"
-              src={
-                msg.senderId === user.id ? user.avatarUrl : "/images/logo.png"
-              }
-              alt="avatar"
-            />
           </div>
         ))}
+
+        {/* typing  */}
+        {typingUsers.has("system") && (
+          <div
+            className={`flex max-w-[80%] md:max-w-[60%] min-w-20 rounded-2xl px-4 py-10 text-[15px] leading-relaxed whitespace-pre-wrap wrap-break-word text-base items-end gap-5 `}
+          >
+            <img
+              className="w-7! h-7! rounded-full object-cover"
+              src={"/images/logo.png"}
+              alt="avatar"
+            />
+            <div className="flex gap-2">
+              <div className="w-2 h-2 rounded-full bg-primary-text animate-bounce delay-75"></div>
+              <div className="w-2 h-2 rounded-full bg-primary-text animate-bounce delay-150"></div>
+              <div className="w-2 h-2 rounded-full bg-primary-text animate-bounce delay-300"></div>
+              <div className="w-2 h-2 rounded-full bg-primary-text animate-bounce delay-500"></div>
+            </div>
+          </div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
@@ -375,7 +480,10 @@ export function FullChatWindow({
               ref={setTextareaEl as any}
               rows={1}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                handleTyping();
+              }}
               onInput={(e) => {
                 const ta = e.currentTarget as HTMLTextAreaElement;
                 const maxHeight = 200;
