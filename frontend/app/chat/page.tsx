@@ -1,3 +1,4 @@
+// app/chat/page.tsx
 "use client";
 import { ChatWidget } from "@/components/widget/ChatWidget";
 import { useChatStore } from "@/store/chatStore";
@@ -5,10 +6,7 @@ import { DarkModeToggle } from "@/components/shared/DarkModeToggle";
 import { Status, UserRole, Visitor } from "@/types";
 import { useEffect, useState } from "react";
 import { isChatDomain } from "@/lib/isChat";
-
 import Image from "next/image";
-import { ChatWindow } from "@/components/widget/ChatWindow";
-import { FullChatWindow } from "@/components/chat/FullChatWindow";
 import {
   getConversationCookie,
   getUserCookie,
@@ -17,15 +15,20 @@ import {
   setConversationCookie,
   setUserCookie,
 } from "@/lib/cookies";
-import { Loader } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { FullChatWindow } from "@/components/chat/FullChatWindow";
 
 export default function VisitorsPage() {
   const [isChatMode, setIsChatMode] = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState("");
   const [loading, setLoading] = useState(true);
-  const { user, setUser, messages, receiveMessage } = useChatStore();
+  const { user, setUser } = useChatStore();
 
-  const hideWidget = isChatDomain();
+  const [hideWidget, setHideWidget] = useState(false);
+
+  useEffect(() => {
+    setHideWidget(!isChatDomain());
+  }, []);
 
   const suggestedQuestions = [
     "Website pricing",
@@ -38,64 +41,76 @@ export default function VisitorsPage() {
     setPendingQuestion(question);
     setIsChatMode(true);
   };
+
   useEffect(() => {
-    const storedUser = getUserCookie();
-    const storedConversation = getConversationCookie();
+    const initializeUser = async () => {
+      setLoading(true);
 
-    if (storedConversation) {
-      setIsChatMode(true);
-    }
+      const storedUser = getUserCookie();
+      const storedConversation = getConversationCookie();
 
-    if (storedUser?.id) {
-      (async () => {
-        try {
-          const res = await fetch(
-            `http://localhost:3001/api/users/${storedUser.id}`
-          );
-          if (!res.ok) throw new Error("User not found");
-          const data: {
-            user: Visitor;
-            conversation: { id: string; status: string } | null;
-          } = await res.json();
+      // If no user cookie, we're done loading
+      if (!storedUser?.id) {
+        setLoading(false);
+        return;
+      }
 
-          setUser({
-            ...data.user,
-            role: UserRole.VISITOR,
-            status: Status.ONLINE,
-          });
-          setUserCookie(data.user);
+      if (storedUser && storedConversation) {
+        setIsChatMode(true);
+      }
 
-          // If conversation exists and open, use it; else remove
-          if (data.conversation?.status === "open") {
-            setConversationCookie(data.conversation.id);
-          } else {
-            removeConversationCookie();
-            setIsChatMode(false);
-          }
-        } catch {
-          removeUserCookie();
-          removeConversationCookie();
-          setIsChatMode(false);
-        } finally {
-          setLoading(false);
+      try {
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/api/users/${storedUser.id}`,
+        );
+
+        if (!res.ok) {
+          throw new Error("User not found");
         }
-      })();
-    } else {
-      setLoading(false);
-    }
+
+        const data: {
+          user: Visitor;
+          conversation: { id: string; status: string } | null;
+        } = await res.json();
+
+        // Set user in store
+        setUser({
+          ...data.user,
+          role: UserRole.VISITOR,
+          status: Status.ONLINE,
+        });
+
+        setUserCookie(data.user);
+      } catch (error) {
+        console.error("Error initializing user:", error);
+        removeUserCookie();
+        removeConversationCookie();
+        setIsChatMode(false);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initializeUser();
   }, [setUser]);
 
-  // 🔥 Dedicated chat domain → full chat UI
   if (!hideWidget) {
     return <ChatWidget />;
   }
 
-  // 🔥 full chat UI
+  //? Show loading state
+  if (loading) {
+    return (
+      <div className="flex flex-col h-screen bg-background items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  //? Show full chat UI
   return (
     <div className="flex flex-col h-screen bg-background text-center w-full">
-      {loading ? (
-        <Loader className="animate-spin text-primary" />
-      ) : isChatMode ? (
+      {isChatMode ? (
         <FullChatWindow
           initialQuestion={pendingQuestion}
           onClose={() => {
@@ -103,7 +118,7 @@ export default function VisitorsPage() {
             setPendingQuestion("");
           }}
         />
-      ) : !isChatMode ? (
+      ) : (
         <>
           <div className="absolute top-4 right-4">
             <DarkModeToggle />
@@ -127,16 +142,22 @@ export default function VisitorsPage() {
                 <button
                   key={i}
                   onClick={() => handleQuestionClick(q)}
-                  className="cursor-pointer px-4 py-2 glass-morphism text-primary-text shadow-lg rounded-full hover:bg-gray-100 text-sm"
+                  className="cursor-pointer px-4 py-2 glass-morphism text-primary-text shadow-lg rounded-full hover:bg-gray-100 text-sm transition-all duration-200 hover:scale-105"
                 >
                   {q}
                 </button>
               ))}
+              <button
+                onClick={() => {
+                  setIsChatMode(true);
+                }}
+                className="cursor-pointer px-4 py-2 glass-morphism text-primary-text shadow-lg rounded-full hover:bg-gray-100 text-sm transition-all duration-200 hover:scale-105"
+              >
+                Have a Chat
+              </button>
             </div>
           </div>
         </>
-      ) : (
-        ""
       )}
     </div>
   );

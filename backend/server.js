@@ -4,6 +4,7 @@ import cors from "cors";
 import { Server } from "socket.io";
 import routes from "./routes/index.js";
 import userRoutes from "./routes/users.js";
+import adminRoutes from "./routes/admin.js";
 import conversationRoutes from "./routes/conversations.js";
 import { handleSocketConnection } from "./controllers/socketController.js";
 
@@ -32,6 +33,7 @@ app.options(/.*/, cors(corsOptions));
 app.use("/", routes);
 app.use("/api/users", userRoutes);
 app.use("/api/conversations", conversationRoutes);
+app.use("/admin", adminRoutes);
 
 const io = new Server(server, {
   cors: {
