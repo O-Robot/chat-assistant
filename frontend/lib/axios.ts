@@ -16,22 +16,18 @@ export const adminApi = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  withCredentials: true,
   timeout: 10000,
 });
 
 // Add request interceptor for admin auth
 adminApi.interceptors.request.use(
   (config) => {
-    // TODO: Add authentication token when auth is implemented
-    // const token = localStorage.getItem('admin_token');
-    // if (token) {
-    //   config.headers.Authorization = `Bearer ${token}`;
-    // }
     return config;
   },
   (error) => {
     return Promise.reject(error);
-  }
+  },
 );
 
 const handleResponse = (response: any) => response;

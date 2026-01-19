@@ -6,10 +6,11 @@ import {
   sendSystemMessage,
 } from "../utils/systemMessages.js";
 import { generateAIResponse } from "../controllers/aiController.js";
+import { notifyAdminNewChat } from "../utils/email.js";
 
-const onlineUsers = new Map(); // userId -> socketId
-const userSockets = new Map(); // socketId -> user data
-const conversationAdminStatus = new Map(); // conversationId -> boolean
+const onlineUsers = new Map();
+const userSockets = new Map();
+const conversationAdminStatus = new Map();
 
 export function handleSocketConnection(io, socket) {
   console.log(`Socket connected: ${socket.id}`);
@@ -188,6 +189,10 @@ export function handleSocketConnection(io, socket) {
           );
         }, 500);
 
+        setTimeout(async () => {
+          await sendAdminJoinedMessage(io, conversationId, sender.firstName);
+        }, 500);
+
         return;
       }
 
@@ -240,6 +245,17 @@ export function handleSocketConnection(io, socket) {
                 "You've been connected to our support team. An agent will be with you shortly.",
               );
             }, 500);
+            const user = await db.get("SELECT * FROM users WHERE id = ?", [
+              senderId,
+            ]);
+            if (user) {
+              notifyAdminNewChat(
+                `${user.firstName} ${user.lastName}`,
+                user.email,
+              ).catch((err) =>
+                console.error("Error sending admin notification:", err),
+              );
+            }
           } else {
             setTimeout(async () => {
               await sendSystemMessage(

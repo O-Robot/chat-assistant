@@ -1,4 +1,3 @@
-// Format timestamp to human-readable string
 export const formatTimestamp = (timestamp) => {
   return new Date(timestamp).toLocaleTimeString([], {
     hour: "2-digit",
@@ -7,7 +6,6 @@ export const formatTimestamp = (timestamp) => {
   });
 };
 
-// Validate user data structure
 export const validateUserData = (userData) => {
   if (!userData || typeof userData !== "object") {
     return false;
@@ -17,7 +15,6 @@ export const validateUserData = (userData) => {
   return requiredFields.every((field) => userData[field]);
 };
 
-// Format message object with consistent structure
 export const formatMessage = (message, sender) => {
   return {
     ...message,

@@ -1,10 +1,12 @@
 import express from "express";
 import http from "http";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import { Server } from "socket.io";
 import routes from "./routes/index.js";
 import userRoutes from "./routes/users.js";
 import adminRoutes from "./routes/admin.js";
+import adminAuthRoutes from "./routes/adminAuth.js";
 import conversationRoutes from "./routes/conversations.js";
 import { handleSocketConnection } from "./controllers/socketController.js";
 
@@ -12,6 +14,7 @@ const app = express();
 const server = http.createServer(app);
 
 app.use(express.json());
+app.use(cookieParser());
 
 // allowed origni
 const allowedOrigins = [
@@ -22,7 +25,7 @@ const allowedOrigins = [
 // Express CORS middleware
 const corsOptions = {
   origin: allowedOrigins,
-  methods: ["GET", "POST", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true,
 };
 
@@ -33,6 +36,7 @@ app.options(/.*/, cors(corsOptions));
 app.use("/", routes);
 app.use("/api/users", userRoutes);
 app.use("/api/conversations", conversationRoutes);
+app.use("/auth/admin", adminAuthRoutes);
 app.use("/admin", adminRoutes);
 
 const io = new Server(server, {

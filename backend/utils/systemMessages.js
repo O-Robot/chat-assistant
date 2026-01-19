@@ -15,7 +15,7 @@ export async function sendSystemMessage(io, conversationId, content) {
     // Save system message to database
     await db.run(
       "INSERT INTO messages (id, conversationId, senderId, content, timestamp) VALUES (?, ?, ?, ?, ?)",
-      [messageId, conversationId, "system", content, timestamp]
+      [messageId, conversationId, "system", content, timestamp],
     );
 
     const systemMessage = {
@@ -26,16 +26,16 @@ export async function sendSystemMessage(io, conversationId, content) {
       timestamp: new Date(timestamp).getTime(),
       sender: {
         id: "system",
-        firstName: "System",
+        firstName: "Robot",
         lastName: "",
-        email: "system@assistant.com",
+        email: "robot@ogooluwaniadewale.com",
       },
     };
 
     // Emit to everyone in the conversation
     io.to(`conversation-${conversationId}`).emit(
       "receive_message",
-      systemMessage
+      systemMessage,
     );
 
     return systemMessage;
@@ -68,17 +68,4 @@ export async function sendConversationClosedMessage(io, conversationId) {
 export async function sendAdminJoinedMessage(io, conversationId, adminName) {
   const joinedText = `${adminName} has joined the conversation.`;
   return await sendSystemMessage(io, conversationId, joinedText);
-}
-
-/**
- * Send a transfer message
- */
-export async function sendTransferMessage(
-  io,
-  conversationId,
-  fromAdmin,
-  toAdmin
-) {
-  const transferText = `Conversation transferred from ${fromAdmin} to ${toAdmin}.`;
-  return await sendSystemMessage(io, conversationId, transferText);
 }
