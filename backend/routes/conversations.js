@@ -1,6 +1,7 @@
 import express from "express";
 import { openDB } from "../db.js";
 import { v4 as uuidv4 } from "uuid";
+import { exportUserTranscript } from "../utils/email/email.js";
 
 const router = express.Router();
 
@@ -23,7 +24,7 @@ router.get("/:id/messages", async (req, res) => {
       LEFT JOIN users u ON m.senderId = u.id
       WHERE m.conversationId = ? 
       ORDER BY m.timestamp ASC`,
-      [req.params.id]
+      [req.params.id],
     );
 
     // Convert timestamp strings to numbers for frontend
@@ -60,7 +61,7 @@ router.get("/:id", async (req, res) => {
 
     const conversation = await db.get(
       `SELECT * FROM conversations WHERE id = ?`,
-      [req.params.id]
+      [req.params.id],
     );
 
     if (!conversation) {
@@ -90,14 +91,14 @@ router.post("/new", async (req, res) => {
       `UPDATE conversations 
        SET status = 'closed', closedAt = CURRENT_TIMESTAMP 
        WHERE userId = ? AND status = 'open'`,
-      [userId]
+      [userId],
     );
 
     // Create new conversation
     const conversationId = uuidv4();
     await db.run(
       "INSERT INTO conversations (id, userId, status) VALUES (?, ?, 'open')",
-      [conversationId, userId]
+      [conversationId, userId],
     );
 
     res.json({ conversationId });
@@ -120,20 +121,30 @@ router.post("/:id/send-transcript", async (req, res) => {
     const db = await openDB();
 
     // Get messages
-    const messages = await db.all(
-      `SELECT m.*, u.firstName, u.lastName 
-       FROM messages m 
-       LEFT JOIN users u ON m.senderId = u.id 
-       WHERE m.conversationId = ? 
-       ORDER BY m.timestamp ASC`,
-      [conversationId]
+    const convo = await db.get(
+      `SELECT c.id, c.userId, c.status, c.createdAt, 
+              u.firstName, u.lastName, u.email AS userEmail, u.phone, u.country
+       FROM conversations c
+       JOIN users u ON c.userId = u.id
+       WHERE c.id = ?`,
+      [conversationId],
     );
 
-    // TODO: Implement email sending with your email service
-    // For now, just return success
-    console.log(`Transcript requested for ${email}:`, messages);
+    if (!convo)
+      return res.status(404).json({ error: "Conversation not found" });
 
-    res.json({ success: true, message: "Transcript sent to email" });
+    const messages = await db.all(
+      `SELECT m.*, u.firstName, u.lastName
+       FROM messages m
+       LEFT JOIN users u ON m.senderId = u.id
+       WHERE m.conversationId = ?
+       ORDER BY m.timestamp ASC`,
+      [conversationId],
+    );
+
+    convo.messages = messages;
+
+    await exportUserTranscript([convo], email, res);
   } catch (error) {
     console.error("Error sending transcript:", error);
     res.status(500).json({ error: "Failed to send transcript" });
@@ -149,7 +160,7 @@ router.post("/:id/close", async (req, res) => {
       `UPDATE conversations 
        SET status = 'closed', closedAt = CURRENT_TIMESTAMP 
        WHERE id = ?`,
-      [req.params.id]
+      [req.params.id],
     );
 
     res.json({ success: true, message: "Conversation closed" });

@@ -1,7 +1,7 @@
-// routes/admin.ts
 import { Router } from "express";
 import { openDB } from "../db.js";
 import { authenticateAdmin } from "../middleware/adminAuth.js";
+import { sendEmail, exportConversation } from "../utils/email/email.js";
 
 const router = Router();
 
@@ -92,68 +92,28 @@ router.get("/conversations/:userId", async (req, res) => {
 router.post("/conversations/:id/export", async (req, res) => {
   try {
     const { id } = req.params;
-    const { email } = req.body;
+    const email = process.env.ADMIN_EMAIL;
 
-    const db = await openDB();
-
-    // Get conversation details
-    const conversation = await db.get(
-      "SELECT c.*, u.firstName, u.lastName, u.email as userEmail FROM conversations c JOIN users u ON c.userId = u.id WHERE c.id = ?",
-      [id],
-    );
-
-    if (!conversation) {
-      return res.status(404).json({ error: "Conversation not found" });
+    if (!email) {
+      return res.status(400).json({ error: "ADMIN_EMAIL not set" });
     }
 
-    // Get messages
-    const messages = await db.all(
-      `SELECT m.*, u.firstName, u.lastName 
-       FROM messages m 
-       LEFT JOIN users u ON m.senderId = u.id 
-       WHERE m.conversationId = ? 
-       ORDER BY m.timestamp ASC`,
-      [id],
-    );
+    await exportConversation(id, email, res);
+  } catch (error) {
+    console.error("Error exporting conversation:", error);
+    res.status(500).json({ error: "Failed to export conversation" });
+  }
+});
 
-    // Format conversation for email
-    const formattedMessages = messages
-      .map((msg) => {
-        const senderName =
-          msg.senderId === "system"
-            ? "System"
-            : msg.senderId === "admin"
-              ? "Admin"
-              : `${msg.firstName} ${msg.lastName}`;
+router.post("/conversations/:id/export/:email", async (req, res) => {
+  try {
+    const { id, email } = req.params;
 
-        const time = new Date(msg.timestamp).toLocaleString();
-        return `[${time}] ${senderName}: ${msg.content}`;
-      })
-      .join("\n\n");
+    if (!email) {
+      return res.status(400).json({ error: "No email provided" });
+    }
 
-    const emailContent = `
-Conversation Export
-==================
-
-Visitor: ${conversation.firstName} ${conversation.lastName}
-Email: ${conversation.userEmail}
-Date: ${new Date(conversation.createdAt).toLocaleString()}
-Status: ${conversation.status}
-
-Messages:
----------
-
-${formattedMessages}
-    `;
-
-    // Send email
-    await sendEmail(
-      email,
-      `Conversation Export - ${conversation.firstName} ${conversation.lastName}`,
-      emailContent,
-    );
-
-    res.json({ success: true, message: "Conversation exported to email" });
+    await exportConversation(id, email, res);
   } catch (error) {
     console.error("Error exporting conversation:", error);
     res.status(500).json({ error: "Failed to export conversation" });

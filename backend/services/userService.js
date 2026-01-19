@@ -1,4 +1,3 @@
-// Map to store active users with socket.id as key
 const activeUsers = new Map();
 
 export const addUser = (socketId, userData) => {

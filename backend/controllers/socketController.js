@@ -1,4 +1,3 @@
-// controllers/socketController.js
 import { openDB } from "../db.js";
 import {
   sendWelcomeMessage,
@@ -7,7 +6,7 @@ import {
   sendAdminJoinedMessage,
 } from "../utils/systemMessages.js";
 import { generateAIResponse } from "../controllers/aiController.js";
-import { notifyAdminNewChat } from "../utils/email.js";
+import { notifyAdminNewChat } from "../utils/email/email.js";
 
 const onlineUsers = new Map();
 const userSockets = new Map();

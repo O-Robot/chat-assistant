@@ -1,4 +1,3 @@
-// controllers/aiController.js (Backend - Example Integration)
 import { openDB } from "../db.js";
 import { sendSystemMessage } from "../utils/systemMessages.js";
 

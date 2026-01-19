@@ -8,7 +8,7 @@ export const userApi = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
-  timeout: 10000,
+  timeout: 30000,
 });
 
 export const adminApi = axios.create({
@@ -17,10 +17,9 @@ export const adminApi = axios.create({
     "Content-Type": "application/json",
   },
   withCredentials: true,
-  timeout: 10000,
+  timeout: 30000,
 });
 
-// Add request interceptor for admin auth
 adminApi.interceptors.request.use(
   (config) => {
     return config;

@@ -17,6 +17,9 @@ import {
   X,
   LogOut,
   Download,
+  Send,
+  LogOutIcon,
+  UserIcon,
 } from "lucide-react";
 import { useChatStore } from "@/store/chatStore";
 import { User, UserRole, Message, Status } from "@/types";
@@ -277,14 +280,49 @@ export default function AdminPage() {
       onConfirm: async () => {
         setIsExporting(true);
         try {
-          await adminApi.post(`/admin/conversations/${activeConv.id}/export`, {
-            email: user?.email,
-          });
+          await adminApi.post(
+            `/admin/conversations/${activeConv.id}/export`,
+            {},
+          );
           toast({
             title: "Success",
             description: "Conversation exported to your email!",
           });
         } catch {
+          toast({
+            title: "Error",
+            description: "Failed to export conversation",
+            variant: "destructive",
+          });
+        } finally {
+          setIsExporting(false);
+        }
+      },
+    });
+  };
+  const handleSendTranscript = async (email?: any) => {
+    if (!email) return;
+    const activeConv = conversations[conversations.length - 1];
+    if (!activeConv) return;
+    confirmation.showConfirmation({
+      title: "Export Conversation?",
+      message: "We'll send the conversation transcript to your email.",
+      confirmText: "Export",
+      cancelText: "Cancel",
+      variant: "info",
+      onConfirm: async () => {
+        setIsExporting(true);
+        try {
+          await adminApi.post(
+            `/admin/conversations/${activeConv.id}/export/${email}`,
+            {},
+          );
+          toast({
+            title: "Success",
+            description: "Conversation exported to your email!",
+          });
+        } catch (error) {
+          console.log(error);
           toast({
             title: "Error",
             description: "Failed to export conversation",
@@ -448,60 +486,82 @@ export default function AdminPage() {
               </div>
 
               {/* Menu */}
-              <Menu as="div" className="relative">
-                <MenuButton className="p-2 rounded-lg cursor-pointer text-primary-text hover:bg-white/10">
-                  <EllipsisVertical size={20} />
-                </MenuButton>
-                <Transition>
-                  <MenuItems className="absolute right-0 mt-2 w-48 bg-white  border rounded-lg shadow-lg z-50">
-                    <MenuItem>
-                      {({ active }: any) => (
-                        <button
-                          onClick={() => setSelectedUserId(null)}
-                          className={`${active ? "bg-gray-100 " : ""} w-full px-4 py-2 text-left text-sm rounded-lg cursor-pointer`}
-                        >
-                          Close
-                        </button>
-                      )}
-                    </MenuItem>
-                    <MenuItem>
-                      {({ active }: any) => (
-                        <button
-                          onClick={() => setProfileUser(currentUser)}
-                          className={`${active ? "bg-gray-100 " : ""} w-full px-4 py-2 text-left text-sm rounded-lg cursor-pointer`}
-                        >
-                          View Profile
-                        </button>
-                      )}
-                    </MenuItem>
-
-                    <MenuItem>
-                      {({ active }) => (
-                        <button
-                          onClick={handleExport}
-                          disabled={isExporting}
-                          className={`${active ? "bg-gray-100 " : ""} w-full px-4 py-2 text-left text-sm flex items-center gap-2 rounded-lg cursor-pointer`}
-                        >
-                          <Download size={16} /> Export
-                        </button>
-                      )}
-                    </MenuItem>
-                    {conversations[conversations.length - 1]?.status ===
-                      "open" && (
+              <div className="flex gap-2 items-center">
+                {isExporting && (
+                  <span className="text-xs flex items-center gap-1">
+                    <Loader2 size={15} className="animate-spin" /> Exporting...
+                  </span>
+                )}
+                <Menu as="div" className="relative">
+                  <MenuButton className="p-2 rounded-lg cursor-pointer text-primary-text hover:bg-white/10">
+                    <EllipsisVertical size={20} />
+                  </MenuButton>
+                  <Transition>
+                    <MenuItems className="absolute right-0 mt-2 w-48 bg-white  border rounded-lg shadow-lg z-50">
                       <MenuItem>
-                        {({ active }) => (
+                        {({ active }: any) => (
                           <button
-                            onClick={handleCloseConversation}
-                            className={`${active ? "bg-gray-100 " : ""} w-full px-4 py-2 text-left text-sm text-red-600 rounded-lg cursor-pointer`}
+                            onClick={() => setSelectedUserId(null)}
+                            className={`${active ? "bg-gray-100 " : ""} w-full px-4 py-2 text-left text-sm rounded-lg cursor-pointer flex items-center gap-2 `}
                           >
-                            End Chat
+                            Close
                           </button>
                         )}
                       </MenuItem>
-                    )}
-                  </MenuItems>
-                </Transition>
-              </Menu>
+                      <MenuItem>
+                        {({ active }: any) => (
+                          <button
+                            onClick={() => setProfileUser(currentUser)}
+                            className={`${active ? "bg-gray-100 " : ""} w-full px-4 py-2 text-left text-sm rounded-lg cursor-pointer flex items-center gap-2 `}
+                          >
+                            <UserIcon/>
+                            View Profile
+                          </button>
+                        )}
+                      </MenuItem>
+
+                      <MenuItem>
+                        {({ active }: any) => (
+                          <button
+                            onClick={handleExport}
+                            disabled={isExporting}
+                            className={`${active ? "bg-gray-100 " : ""} w-full px-4 py-2 text-left text-sm flex items-center gap-2 rounded-lg cursor-pointer`}
+                          >
+                            <Download size={16} /> Export
+                          </button>
+                        )}
+                      </MenuItem>
+                      <MenuItem>
+                        {({ active }: any) => (
+                          <button
+                            onClick={() =>
+                              handleSendTranscript(currentUser?.email)
+                            }
+                            disabled={isExporting}
+                            className={`${active ? "bg-gray-100 " : ""} w-full px-4 py-2 text-left text-sm flex items-center gap-2 rounded-lg cursor-pointer`}
+                          >
+                            <Send size={16} /> Send Transcript
+                          </button>
+                        )}
+                      </MenuItem>
+                      {conversations[conversations.length - 1]?.status ===
+                        "open" && (
+                        <MenuItem>
+                          {({ active }: any) => (
+                            <button
+                              onClick={handleCloseConversation}
+                              className={`${active ? "bg-gray-100 " : ""} w-full px-4 py-2 text-left text-sm text-red-600 rounded-lg cursor-pointer flex items-center gap-2 `}
+                            >
+                              <LogOutIcon size={16} />
+                              End Chat
+                            </button>
+                          )}
+                        </MenuItem>
+                      )}
+                    </MenuItems>
+                  </Transition>
+                </Menu>
+              </div>
             </div>
 
             {/* Messages */}
@@ -513,7 +573,8 @@ export default function AdminPage() {
               <div className="flex-1 overflow-y-auto p-4 bg-slate-200 dark:bg-gray-900">
                 {conversations.map((conv: any, i) => {
                   const isCurrent = i === conversations.length - 1;
-                  const isMinimized = !isCurrent && (minimized[conv.id] ?? true);
+                  const isMinimized =
+                    !isCurrent && (minimized[conv.id] ?? true);
 
                   return (
                     <div key={conv.id} className="mb-4">
