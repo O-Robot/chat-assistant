@@ -10,6 +10,7 @@ export type User = {
   role: UserRole;
   status: Status;
   avatarUrl: string;
+  createdAt?:string
 };
 
 export type Visitor = User & {

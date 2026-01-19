@@ -17,7 +17,6 @@ import {
   X,
   LogOut,
   Download,
-  Edit,
 } from "lucide-react";
 import { useChatStore } from "@/store/chatStore";
 import { User, UserRole, Message, Status } from "@/types";
@@ -25,7 +24,6 @@ import { formatDateTime } from "@/lib/constants";
 import { adminApi } from "@/lib/axios";
 import { getSocket } from "@/lib/socket";
 import { UserProfileModal } from "@/components/admin/UserProfileModal";
-import { EditUserModal } from "@/components/admin/EditUserModal";
 import { useConfirmationModal } from "@/hooks/use-modal";
 import { ConfirmationModal } from "@/components/shared/ConfirmationModal";
 import { useToast } from "@/hooks/use-toast";
@@ -58,19 +56,51 @@ export default function AdminPage() {
   >([]);
   const [minimized, setMinimized] = useState<Record<string, boolean>>({});
   const [profileUser, setProfileUser] = useState<User | null>(null);
-  const [editUser, setEditUser] = useState<User | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [input, setInput] = useState("");
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [hasPlayedSound, setHasPlayedSound] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [loadStatus, setLoadStatus] = useState({
+    users: true,
+    chat: false,
+  });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastMessageCountRef = useRef(0);
 
   const confirmation = useConfirmationModal();
+
+  const playNotificationSound = () => {
+    try {
+      const audioContext = new (
+        window.AudioContext || (window as any).webkitAudioContext
+      )();
+      const playTone = (
+        frequency: number,
+        startTime: number,
+        duration: number,
+      ) => {
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        oscillator.frequency.value = frequency;
+        oscillator.type = "sine";
+        gainNode.gain.setValueAtTime(0.3, startTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+        oscillator.start(startTime);
+        oscillator.stop(startTime + duration);
+      };
+      const now = audioContext.currentTime;
+      playTone(800, now, 0.1);
+      playTone(600, now + 0.12, 0.15);
+    } catch (error) {
+      console.error("Error playing sound:", error);
+    }
+  };
 
   // Initialize admin user
   useEffect(() => {
@@ -126,18 +156,7 @@ export default function AdminPage() {
         latestMessage.senderId !== "admin" &&
         latestMessage.senderId !== "system"
       ) {
-        try {
-          const audioCtx = new (
-            window.AudioContext || (window as any).webkitAudioContext
-          )();
-          const osc = audioCtx.createOscillator();
-          const gainNode = audioCtx.createGain();
-          osc.connect(gainNode);
-          gainNode.connect(audioCtx.destination);
-          osc.frequency.value = 600;
-          osc.start();
-          osc.stop(audioCtx.currentTime + 0.1);
-        } catch {}
+        playNotificationSound();
       }
     }
     lastMessageCountRef.current = messages.length;
@@ -152,6 +171,8 @@ export default function AdminPage() {
         setFilteredUsers(response.data);
       } catch (error) {
         console.error(error);
+      } finally {
+        setLoadStatus((prev) => ({ ...prev, users: false }));
       }
     }
     fetchUsers();
@@ -180,6 +201,8 @@ export default function AdminPage() {
       clearMessages();
       return;
     }
+    setLoadStatus((prev) => ({ ...prev, chat: true }));
+
     async function fetchConversations() {
       try {
         const res = await adminApi.get(
@@ -190,9 +213,14 @@ export default function AdminPage() {
         res.data.forEach((conv: any) =>
           conv.messages.forEach((msg: Message) => receiveMessage(msg)),
         );
+        if (user) {
+          setUser(user);
+        }
         setTimeout(() => setHasPlayedSound(true), 500);
       } catch (error) {
         console.error(error);
+      } finally {
+        setLoadStatus((prev) => ({ ...prev, chat: false }));
       }
     }
     fetchConversations();
@@ -343,41 +371,47 @@ export default function AdminPage() {
         </div>
 
         {/* User List */}
-        <div className="flex-1 overflow-y-auto bg-background ">
-          {filteredUsers.map((u) => (
-            <div
-              key={u.id}
-              onClick={() => {
-                setSelectedUserId(u.id);
-                setSidebarOpen(false);
-              }}
-              className={`p-4 border-b border-primary/20 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
-                selectedUserId === u.id ? "bg-gray-50 dark:bg-gray-700" : ""
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <img
-                    src={`https://api.dicebear.com/9.x/notionists-neutral/svg?seed=${u.id}`}
-                    alt="avatar"
-                    className="w-12 h-12 rounded-full"
-                  />
-                  {onlineUsers.has(u.id) && (
-                    <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-900 dark:text-white truncate">
-                    {u.firstName} {u.lastName}
-                  </p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                    {u.email}
-                  </p>
+        {loadStatus.users ? (
+          <div className="w-full h-full flex items-center justify-center">
+            <Loader2 size={20} className="animate-spin" />
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto bg-background ">
+            {filteredUsers.map((u) => (
+              <div
+                key={u.id}
+                onClick={() => {
+                  setSelectedUserId(u.id);
+                  setSidebarOpen(false);
+                }}
+                className={`p-4 border-b border-primary/20 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
+                  selectedUserId === u.id ? "bg-gray-50 dark:bg-gray-700" : ""
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <img
+                      src={`https://api.dicebear.com/9.x/notionists-neutral/svg?seed=${u.id}`}
+                      alt="avatar"
+                      className="w-12 h-12 rounded-full"
+                    />
+                    {onlineUsers.has(u.id) && (
+                      <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900 dark:text-white truncate">
+                      {u.firstName} {u.lastName}
+                    </p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                      {u.email}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Main Chat Area */}
@@ -471,101 +505,119 @@ export default function AdminPage() {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 bg-slate-200 dark:bg-gray-900">
-              {conversations.map((conv: any, i) => {
-                const isMinimized =
-                  minimized[conv.id] && i !== conversations.length - 1;
-                const isCurrent = i === conversations.length - 1;
-                if (!isCurrent && isMinimized)
+            {loadStatus.chat ? (
+              <div className="w-full h-full flex items-center justify-center">
+                <Loader2 size={30} className="animate-spin" />
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto p-4 bg-slate-200 dark:bg-gray-900">
+                {conversations.map((conv: any, i) => {
+                  const isCurrent = i === conversations.length - 1;
+                  const isMinimized = !isCurrent && (minimized[conv.id] ?? true);
+
                   return (
-                    <div
-                      key={conv.id}
-                      className="text-center text-sm text-gray-500 mb-2 cursor-pointer bg-white/50 dark:bg-gray-800/50 rounded-lg py-1"
-                      onClick={() =>
-                        setMinimized((prev) => ({ ...prev, [conv.id]: false }))
-                      }
-                    >
-                      Show - {formatDateTime(conv.createdAt)}
+                    <div key={conv.id} className="mb-4">
+                      <div
+                        className="text-center text-sm text-gray-500 mb-2 cursor-pointer bg-white/50 dark:bg-gray-800/50 rounded-lg py-1"
+                        onClick={() => {
+                          if (isCurrent) return;
+                          setMinimized((prev) => ({
+                            ...prev,
+                            [conv.id]: !isMinimized,
+                          }));
+                        }}
+                      >
+                        {isMinimized
+                          ? `Show conversation - ${formatDateTime(
+                              conv.createdAt,
+                            )}`
+                          : isCurrent
+                            ? "Current conversation"
+                            : `Hide conversation - ${formatDateTime(
+                                conv.createdAt,
+                              )}`}
+                      </div>
+                      {!isMinimized && (
+                        <div>
+                          {conv.messages.map((msg: any, idx: any) => {
+                            const isAdmin =
+                              msg.senderId === "admin" ||
+                              msg.senderId === "system";
+                            return (
+                              <div
+                                key={idx}
+                                className={`flex max-w-[80%] md:max-w-[60%] min-w-20 rounded-2xl px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap wrap-break-word text-base items-end gap-3 ${
+                                  isAdmin
+                                    ? "ml-auto text-right flex-row-reverse"
+                                    : "mr-auto justify-start text-left flex-row"
+                                }`}
+                                style={{
+                                  wordBreak: "break-word",
+                                  overflowWrap: "anywhere",
+                                }}
+                              >
+                                <img
+                                  className="w-7! h-7! rounded-full object-cover"
+                                  src={
+                                    isAdmin
+                                      ? user?.avatarUrl
+                                      : `https://api.dicebear.com/9.x/notionists-neutral/svg?seed=${currentUser.id}`
+                                  }
+                                  alt="avatar"
+                                />
+                                <div
+                                  className={`relative inline-flex flex-col max-w-[85%] md:max-w-[70%] min-w-12 rounded-2xl px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap text-base shadow-sm ${
+                                    isAdmin
+                                      ? "bg-white/60 text-gray-900 border border-gray-200"
+                                      : "glass-morphism text-primary-text"
+                                  }`}
+                                >
+                                  {msg.content}
+
+                                  <span className="mt-1 text-[11px] text-gray-500 self-end">
+                                    {new Date(msg.timestamp).toLocaleTimeString(
+                                      "en-GB",
+                                      {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                        hour12: true,
+                                      },
+                                    )}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
+                })}
 
-                return (
-                  <div key={conv.id} className="mb-4">
-                    {!isMinimized &&
-                      conv.messages.map((msg: any, idx: any) => {
-                        const isAdmin =
-                          msg.senderId === "admin" || msg.senderId === "system";
-                        return (
-                          <div
-                            className={`flex max-w-[80%] md:max-w-[60%] min-w-20 rounded-2xl px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap wrap-break-word text-base items-end gap-3 ${
-                              isAdmin
-                                ? "mr-auto justify-start text-left flex-row"
-                                : "ml-auto text-right flex-row-reverse"
-                            }`}
-                            style={{
-                              wordBreak: "break-word",
-                              overflowWrap: "anywhere",
-                            }}
-                          >
-                            <img
-                              className="w-7! h-7! rounded-full object-cover"
-                              src={
-                                isAdmin
-                                  ? "/images/logo.png"
-                                  : `https://api.dicebear.com/9.x/notionists-neutral/svg?seed=${currentUser.id}`
-                              }
-                              alt="avatar"
-                            />
-                            <div
-                              className={`relative inline-flex flex-col max-w-[85%] md:max-w-[70%] min-w-12 rounded-2xl px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap text-base shadow-sm ${
-                                isAdmin
-                                  ? "bg-white/60 text-gray-900 border border-gray-200"
-                                  : "glass-morphism text-primary-text"
-                              }`}
-                            >
-                              {msg.content}
-
-                              <span className="mt-1 text-[11px] text-gray-500 self-end">
-                                {new Date(msg.timestamp).toLocaleTimeString(
-                                  "en-GB",
-                                  {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                    hour12: true,
-                                  },
-                                )}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                );
-              })}
-
-              {/* Typing */}
-              {selectedUserId && typingUsers.has(selectedUserId) && (
-                <div className="flex max-w-[80%] md:max-w-[60%] min-w-20 rounded-xl px-4 py-10 text-[15px] leading-relaxed ml-auto text-right flex-row-reverse whitespace-pre-wrap wrap-break-word text-base items-end gap-5">
-                  <img
-                    className="w-7! h-7! rounded-full object-cover"
-                    src={`https://api.dicebear.com/9.x/notionists-neutral/svg?seed=${currentUser.id}`}
-                    alt="avatar"
-                  />
-                  <div className="flex items-center gap-2 px-3 py-2 glass-morphism rounded-xl shadow-sm backdrop-blur-sm">
-                    <div className="flex gap-1">
-                      <span className="w-2 h-2 rounded-full bg-primary-text animate-[typing_1.2s_ease-in-out_infinite]"></span>
-                      <span className="w-2 h-2 rounded-full bg-primary-text animate-[typing_1.2s_ease-in-out_infinite] [animation-delay:0.15s]"></span>
-                      <span className="w-2 h-2 rounded-full bg-primary-text animate-[typing_1.2s_ease-in-out_infinite] [animation-delay:0.3s]"></span>
+                {/* Typing */}
+                {selectedUserId && typingUsers.has(selectedUserId) && (
+                  <div className="flex max-w-[80%] md:max-w-[60%] min-w-20 rounded-xl px-4 py-10 text-[15px] leading-relaxed ml-auto text-right flex-row-reverse whitespace-pre-wrap wrap-break-word text-base items-end gap-5">
+                    <img
+                      className="w-7! h-7! rounded-full object-cover"
+                      src={`https://api.dicebear.com/9.x/notionists-neutral/svg?seed=${currentUser.id}`}
+                      alt="avatar"
+                    />
+                    <div className="flex items-center gap-2 px-3 py-2 glass-morphism rounded-xl shadow-sm backdrop-blur-sm">
+                      <div className="flex gap-1">
+                        <span className="w-2 h-2 rounded-full bg-primary-text animate-[typing_1.2s_ease-in-out_infinite]"></span>
+                        <span className="w-2 h-2 rounded-full bg-primary-text animate-[typing_1.2s_ease-in-out_infinite] [animation-delay:0.15s]"></span>
+                        <span className="w-2 h-2 rounded-full bg-primary-text animate-[typing_1.2s_ease-in-out_infinite] [animation-delay:0.3s]"></span>
+                      </div>
+                      <span className="text-xs  text-primary-text ml-1">
+                        typing
+                      </span>
                     </div>
-                    <span className="text-xs  text-primary-text ml-1">
-                      typing
-                    </span>
                   </div>
-                </div>
-              )}
+                )}
 
-              <div ref={messagesEndRef} />
-            </div>
+                <div ref={messagesEndRef} />
+              </div>
+            )}
 
             {/* Input */}
             {conversations.length > 0 &&
@@ -627,6 +679,8 @@ export default function AdminPage() {
       <UserProfileModal
         user={profileUser}
         onClose={() => setProfileUser(null)}
+        onlineUsers={onlineUsers}
+        onUpdate={setProfileUser}
       />
 
       <ConfirmationModal
