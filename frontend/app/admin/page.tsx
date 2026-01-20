@@ -150,12 +150,37 @@ export default function AdminPage() {
     });
 
     socket.on("receive_message", (message: Message) => {
-      if (message.senderId !== selectedUserId && message.senderId !== "admin") {
-        setConversationUnreadCounts((prev) => ({
-          ...prev,
-          [message.senderId]: (prev[message.senderId] || 0) + 1,
-        }));
+      const currentActiveId = selectedUserId;
+
+      if (message.senderId !== "admin" && message.senderId !== "system") {
+        if (message.senderId !== currentActiveId) {
+          setConversationUnreadCounts((prev) => ({
+            ...prev,
+            [message.senderId]: (prev[message.senderId] || 0) + 1,
+          }));
+        } else {
+          setConversationUnreadCounts((prev) => ({
+            ...prev,
+            [message.senderId]: 0,
+          }));
+        }
       }
+      setConversations((prev) => {
+        return prev.map((conv) => {
+          if (conv.id === message.conversationId) {
+            const messageExists = conv.messages.some(
+              (m) => m.id === message.id,
+            );
+            if (messageExists) return conv;
+
+            return {
+              ...conv,
+              messages: [...conv.messages, message],
+            };
+          }
+          return conv;
+        });
+      });
     });
 
     return () => {
@@ -695,7 +720,7 @@ export default function AdminPage() {
 
                 {/* Typing */}
                 {selectedUserId && typingUsers.has(selectedUserId) && (
-                  <div className="flex max-w-[80%] md:max-w-[60%] min-w-20 rounded-xl px-4 py-10 text-[15px] leading-relaxed ml-auto text-right flex-row-reverse whitespace-pre-wrap wrap-break-word text-base items-end gap-5">
+                  <div className="flex max-w-[80%] md:max-w-[60%] min-w-20 rounded-xl px-4 py-10 text-[15px] leading-relaxed mr-auto text-right  whitespace-pre-wrap wrap-break-word text-base items-end gap-5">
                     <img
                       className="w-7! h-7! rounded-full object-cover"
                       src={`https://api.dicebear.com/9.x/notionists-neutral/svg?seed=${currentUser.id}`}

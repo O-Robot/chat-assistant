@@ -225,8 +225,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const socket = getSocket();
 
     socket.on("connect", () => {
-      console.log("Socket connected");
+      console.log("Socket reconnected");
       // System is always online
+      const { user } = get();
+      if (user?.id) {
+        socket.emit("user_join", {
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user?.lastName,
+          email: user.email,
+          role: user.role,
+        });
+      }
       get().updateOnlineStatus("system", true);
     });
 
