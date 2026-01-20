@@ -251,6 +251,7 @@ export function handleSocketConnection(io, socket) {
             if (user) {
               notifyAdminNewChat(
                 `${user.firstName} ${user.lastName}`,
+                `${user.phone}`,
                 user.email,
               ).catch((err) =>
                 console.error("Error sending admin notification:", err),

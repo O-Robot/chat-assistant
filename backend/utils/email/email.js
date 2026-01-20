@@ -81,7 +81,11 @@ export async function sendEmailWithAttachment({
 }
 
 // Admin notification
-export async function notifyAdminNewChat(visitorName, visitorEmail) {
+export async function notifyAdminNewChat(
+  visitorName,
+  visitorPhone,
+  visitorEmail,
+) {
   const subject = "🔔 New Chat Transfer Request";
   const text = `
 Hello Admin,
@@ -91,6 +95,8 @@ A visitor has requested to be transferred to a live agent.
 Visitor Details:
 - Name: ${visitorName}
 - Email: ${visitorEmail}
+- Phone Number: +${visitorPhone}
+
 
 Please log in to the admin dashboard to respond.
 
@@ -108,6 +114,7 @@ Chat System
         <h3 style="margin-top: 0;">Visitor Details:</h3>
         <p><strong>Name:</strong> ${visitorName}</p>
         <p><strong>Email:</strong> ${visitorEmail}</p>
+        <p><strong>Phone:</strong> ${visitorPhone}</p>
       </div>
       
       <p>Please log in to the admin dashboard to respond.</p>

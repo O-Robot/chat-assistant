@@ -15,6 +15,8 @@ interface ChatState {
   isSendingMessage: boolean;
   hasPlayedNotificationOnLoad: boolean;
   conversationClosed: boolean;
+  unreadCount: number;
+  lastReadMessageId: string | null;
 
   startTyping: (userId: string) => void;
   stopTyping: (userId: string) => void;
@@ -36,10 +38,13 @@ interface ChatState {
   playNotificationSound: () => void;
   initializeSocketListeners: () => void;
   setHasPlayedNotificationOnLoad: (value: boolean) => void;
+  resetUnreadCount: () => void;
+  incrementUnreadCount: () => void;
 }
 
 const STORAGE_PREFIX = "chat-messages-";
 const LAST_SYNC_PREFIX = "chat-last-sync-";
+const LAST_READ_PREFIX = "chat-last-read-";
 
 const getStorage = () => {
   if (typeof window === "undefined") return null;
@@ -105,21 +110,71 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isSendingMessage: false,
   hasPlayedNotificationOnLoad: false,
   conversationClosed: false,
+  unreadCount: 0,
+  lastReadMessageId: null,
 
   setLoadingMessages: (loading) => set({ isLoadingMessages: loading }),
   setSendingMessage: (sending) => set({ isSendingMessage: sending }),
   setHasPlayedNotificationOnLoad: (value) =>
     set({ hasPlayedNotificationOnLoad: value }),
 
+  resetUnreadCount: () => {
+    const { messages } = get();
+    const storage = getStorage();
+
+    // Mark the last message as read
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      set({
+        unreadCount: 0,
+        lastReadMessageId: lastMessage.id,
+      });
+
+      // Save to localStorage
+      if (storage && lastMessage.conversationId) {
+        const key = LAST_READ_PREFIX + lastMessage.conversationId;
+        storage.setItem(key, lastMessage.id);
+      }
+    } else {
+      set({ unreadCount: 0 });
+    }
+  },
+
+  incrementUnreadCount: () => {
+    set((state) => ({ unreadCount: state.unreadCount + 1 }));
+  },
+
   loadMessagesFromLocalStorage: (conversationId) => {
     const storage = getStorage();
     if (!storage) return;
 
     const key = STORAGE_PREFIX + conversationId;
+    const lastReadKey = LAST_READ_PREFIX + conversationId;
+
     const storedData = storage.getItem(key);
     const storedMessages = parseStorageData(storedData);
+    const lastReadMessageId = storage.getItem(lastReadKey);
 
-    set({ messages: storedMessages });
+    // Calculate unread count
+    let unreadCount = 0;
+    if (lastReadMessageId && storedMessages.length > 0) {
+      const lastReadIndex = storedMessages.findIndex(
+        (m) => m.id === lastReadMessageId,
+      );
+      if (lastReadIndex !== -1) {
+        const { user } = get();
+        // Count messages after the last read message that aren't from current user
+        unreadCount = storedMessages
+          .slice(lastReadIndex + 1)
+          .filter((m) => m.senderId !== user?.id).length;
+      }
+    }
+
+    set({
+      messages: storedMessages,
+      lastReadMessageId,
+      unreadCount,
+    });
   },
 
   saveMessagesToLocalStorage: (conversationId) => {
@@ -145,12 +200,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ user });
     const socket = getSocket();
 
-    if (
-      user?.id &&
-      user?.firstName &&
-      user?.email &&
-      user?.role
-    ) {
+    if (user?.id && user?.firstName && user?.email && user?.role) {
       socket.emit("user_join", {
         id: user.id,
         firstName: user.firstName,
@@ -253,7 +303,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   receiveMessage: (msg) => {
-    const { user, messages } = get();
+    const { user, messages, isChatFocused, lastReadMessageId } = get();
 
     // Check if message already exists
     const exists = messages.some((m) => m.id === msg.id);
@@ -266,8 +316,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Save to local storage
     get().saveMessagesToLocalStorage(msg.conversationId);
 
-    // Play notification sound if message is from someone else and not on initial load
+    // Handle unread count and notifications for messages from others
     if (msg.senderId !== user?.id) {
+      // Increment unread count if chat is not focused
+      // Also increment if this message is after the last read message
+      if (!isChatFocused) {
+        get().incrementUnreadCount();
+      }
+
+      // Play notification sound
       get().playNotificationSound();
     }
   },
@@ -294,7 +351,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   setSelectedVisitorId: (visitorId) => set({ selectedVisitorId: visitorId }),
-  setIsChatFocused: (focused) => set({ isChatFocused: focused }),
+
+  setIsChatFocused: (focused) => {
+    set({ isChatFocused: focused });
+    // Reset unread count when chat becomes focused
+    if (focused) {
+      get().resetUnreadCount();
+    }
+  },
 
   clearChat: () => {
     set({ messages: [] });
@@ -306,7 +370,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })),
 
   clearMessages: () => {
-    set({ messages: [], hasPlayedNotificationOnLoad: false });
+    set({
+      messages: [],
+      hasPlayedNotificationOnLoad: false,
+      unreadCount: 0,
+      lastReadMessageId: null,
+    });
   },
 
   startTyping: (userId) =>

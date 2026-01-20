@@ -22,26 +22,11 @@ export function Avatar({ user, size = "md" }: AvatarProps) {
 
   return (
     <div className="relative">
-      {user.avatarUrl ? (
-        <img
-          src={user.avatarUrl}
-          alt={user.name}
-          className={`rounded-full ${sizeClasses[size]}`}
-        />
-      ) : (
-        <div
-          className={`flex items-center justify-center rounded-full bg-gray-200 text-gray-600 ${sizeClasses[size]}`}
-        >
-          <span>{getInitials(user.name)}</span>
-        </div>
-      )}
-      {user.status && (
-        <div
-          className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white ${
-            user.status === Status.ONLINE ? "bg-green-500" : "bg-gray-500"
-          }`}
-        />
-      )}
+      <div
+        className={`flex items-center font-bold justify-center rounded-full text-white ${sizeClasses[size]}`}
+      >
+        <span>{getInitials(user.firstName + " " + user.lastName)}</span>
+      </div>
     </div>
   );
 }

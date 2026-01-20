@@ -83,6 +83,7 @@ export function FullChatWindow({
     phone: "",
     country: "",
   });
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const typingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -257,8 +258,6 @@ export function FullChatWindow({
       stopTypingEmit();
     };
   }, [isFocus]);
-
-  console.log(typingUsers);
 
   //! Handle user form submission
   const handleUserSubmit = async (e: React.FormEvent) => {
@@ -590,7 +589,7 @@ export function FullChatWindow({
           <span className="font-medium text-skill-text">Ogooluwani's Chat</span>
           <span className="text-xs text-gray-500">
             <span className="text-xs text-gray-500">
-              {isSystemOnline  ? (
+              {isSystemOnline ? (
                 <span className="flex items-center gap-1">
                   <span className="w-2 h-2 bg-primary  rounded-full animate-pulse" />
                   Robot Online

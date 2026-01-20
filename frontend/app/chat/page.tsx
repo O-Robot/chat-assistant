@@ -1,18 +1,15 @@
 // app/chat/page.tsx
 "use client";
-import { ChatWidget } from "@/components/widget/ChatWidget";
 import { useChatStore } from "@/store/chatStore";
 import { DarkModeToggle } from "@/components/shared/DarkModeToggle";
 import { Status, UserRole, Visitor } from "@/types";
 import { useEffect, useState } from "react";
-import { isChatDomain } from "@/lib/isChat";
 import Image from "next/image";
 import {
   getConversationCookie,
   getUserCookie,
   removeConversationCookie,
   removeUserCookie,
-  setConversationCookie,
   setUserCookie,
 } from "@/lib/cookies";
 import { Loader2 } from "lucide-react";
@@ -23,12 +20,6 @@ export default function VisitorsPage() {
   const [pendingQuestion, setPendingQuestion] = useState("");
   const [loading, setLoading] = useState(true);
   const { user, setUser } = useChatStore();
-
-  const [hideWidget, setHideWidget] = useState(false);
-
-  useEffect(() => {
-    setHideWidget(!isChatDomain());
-  }, []);
 
   const suggestedQuestions = [
     "Website pricing",
@@ -93,10 +84,6 @@ export default function VisitorsPage() {
 
     initializeUser();
   }, [setUser]);
-
-  if (!hideWidget) {
-    return <ChatWidget />;
-  }
 
   //? Show loading state
   if (loading) {

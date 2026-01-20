@@ -3,49 +3,81 @@
 import { useState, useEffect } from "react";
 import { ChatWindow } from "@/components/widget/ChatWindow";
 import { useChatStore } from "@/store/chatStore";
-import { useMessageNotifications } from "@/hooks/useMessageNotifications";
 import { Avatar } from "@/components/widget/Avatar";
-import { chatConfig } from "@/config/chat";
+import { getUserCookie, getConversationCookie } from "@/lib/cookies";
+import { Status, UserRole } from "@/types";
 
 export function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
-  const { user, messages } = useChatStore();
-  const { unreadCount, resetUnreadCount } = useMessageNotifications(
-    messages,
-    isOpen,
-    user?.id
-  );
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  // Reset unread count when chat is opened
+  const {
+    user,
+    setUser,
+    unreadCount,
+    resetUnreadCount,
+    setIsChatFocused,
+    initializeSocketListeners,
+    loadMessagesFromLocalStorage,
+  } = useChatStore();
+
+  // Initialize user from cookies on mount
   useEffect(() => {
+    const initializeUser = () => {
+      const storedUser = getUserCookie();
+      const conversationId = getConversationCookie();
+
+      if (storedUser?.id) {
+        // Set user in store
+        setUser({
+          ...storedUser,
+          role: UserRole.VISITOR,
+          status: Status.ONLINE,
+        });
+
+        // Load messages from localStorage if conversation exists
+        if (conversationId) {
+          loadMessagesFromLocalStorage(conversationId);
+        }
+      }
+
+      setIsInitialized(true);
+    };
+
+    initializeUser();
+  }, [setUser, loadMessagesFromLocalStorage]);
+
+  // Initialize socket listeners
+  useEffect(() => {
+    if (isInitialized) {
+      initializeSocketListeners();
+    }
+  }, [isInitialized, initializeSocketListeners]);
+
+  // Handle chat focus state
+  useEffect(() => {
+    setIsChatFocused(isOpen);
+
     if (isOpen) {
       resetUnreadCount();
     }
-  }, [isOpen, resetUnreadCount]);
+  }, [isOpen, setIsChatFocused, resetUnreadCount]);
 
   return (
     <>
-      {/* Chat Window */}
-      {isOpen && user && (
-        <ChatWindow conversationId={user.id} onClose={() => setIsOpen(false)} />
-      )}
+      {isOpen && <ChatWindow onClose={() => setIsOpen(false)} />}
 
-      {/* Floating Button */}
       <button
         onClick={() => setIsOpen(true)}
-        className={`fixed bottom-6 right-6 z-50 flex items-center justify-center w-14 h-14 rounded-full shadow-lg transition-all duration-300 ease-in-out transform hover:scale-110 ${
+        className={`fixed bottom-6 right-6 z-50 flex items-center justify-center w-14 h-14 rounded-full shadow-lg transition-all duration-300 ease-in-out transform hover:scale-110 bg-primary cursor-pointer ${
           isOpen ? "scale-0" : "scale-100"
-        } ${
-          unreadCount > 0
-            ? `bg-blue-700 dark:bg-blue-500`
-            : `bg-blue-700 dark:bg-blue-500`
         }`}
       >
         {user ? (
           <div className="relative">
-            <Avatar user={user} size="sm" />
+            <Avatar user={user} />
             {unreadCount > 0 && (
-              <span className="absolute -top-3 -right-3 w-5 h-5 flex items-center justify-center bg-red-500 text-white text-xs font-medium rounded-full">
+              <span className="absolute -top-3 -right-2 w-5 h-5 flex items-center justify-center bg-red-500 text-white text-xs font-bold rounded-full">
                 {unreadCount}
               </span>
             )}
@@ -67,13 +99,15 @@ export function ChatWidget() {
         )}
       </button>
 
-      {/* Greeting Message Bubble */}
       {!isOpen && unreadCount === 0 && (
-        <div className="fixed bottom-24 right-6 z-50 max-w-xs bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transform transition-all duration-300 ease-in-out animate-fade-in">
+        <div
+          onClick={() => setIsOpen(true)}
+          className="fixed bottom-24 right-6 z-50 max-w-xs bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transform transition-all duration-300 ease-in-out animate-fade-in cursor-pointer hover:scale-105"
+        >
           <p className="text-sm text-gray-800 dark:text-white">
-            {chatConfig.welcomeMessage}
+            Hi {user?.firstName || "there"}! 👋 How can I help you today?
           </p>
-          <div className="absolute -bottom-2 right-4 w-4 h-4 bg-white dark:bg-gray-800 transform rotate-45" />
+          <div className="absolute -bottom-2 right-6 w-4 h-4 bg-white dark:bg-gray-800 transform rotate-45" />
         </div>
       )}
     </>
