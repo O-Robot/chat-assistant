@@ -120,7 +120,6 @@ export function handleSocketConnection(io, socket) {
 
       const db = await openDB();
 
-      // Check if conversation is still open
       const conversation = await db.get(
         "SELECT status FROM conversations WHERE id = ?",
         [conversationId],
@@ -167,44 +166,38 @@ export function handleSocketConnection(io, socket) {
 
       const messageWithSender = { ...message, sender };
 
-      // Broadcast to EVERYONE (all connected sockets)
       io.emit("receive_message", messageWithSender);
 
-      // If admin sends a message, mark conversation as admin-controlled
-      if (
-        senderId === "admin" &&
-        !conversationAdminStatus.get(conversationId)
-      ) {
+      const isAdminHandled = conversationAdminStatus.get(conversationId);
+
+      if (senderId === "admin" && !isAdminHandled) {
         conversationAdminStatus.set(conversationId, true);
 
-        // System goes offline for this conversation
         io.emit("system_offline_for_conversation", conversationId);
 
-        // Send transfer notification
         setTimeout(async () => {
           await sendSystemMessage(
             io,
             conversationId,
-            "You've been connected to our support team. An agent is now assisting you.",
+            "You've been connected. An agent is now assisting you.",
           );
-        }, 500);
-
-        setTimeout(async () => {
           await sendAdminJoinedMessage(io, conversationId, sender.firstName);
         }, 500);
-
         return;
       }
 
-      // Check for transfer request
+      if (isAdminHandled) {
+        console.log(
+          `Admin is handling conversation ${conversationId}. System ignoring triggers.`,
+        );
+        return;
+      }
+
       const lowerContent = content.toLowerCase();
+      const triggers = ["transfer", "live agent", "talk to ogo", "human"];
       if (
-        (lowerContent.includes("transfer") ||
-          lowerContent.includes("live agent") ||
-          lowerContent.includes("human")) &&
-        senderId !== "system" &&
-        senderId !== "admin" &&
-        !conversationAdminStatus.get(conversationId)
+        triggers.some((t) => lowerContent.includes(t)) &&
+        senderId !== "system"
       ) {
         setTimeout(async () => {
           await sendSystemMessage(
@@ -216,24 +209,21 @@ export function handleSocketConnection(io, socket) {
         return;
       }
 
-      // Check for yes/no response to transfer
       if (
         (lowerContent === "yes" || lowerContent === "no") &&
-        senderId !== "system" &&
-        senderId !== "admin"
+        senderId !== "system"
       ) {
-        const recentMessages = await db.all(
+        const recent = await db.all(
           `SELECT * FROM messages WHERE conversationId = ? ORDER BY timestamp DESC LIMIT 3`,
           [conversationId],
         );
-
-        const hasTransferRequest = recentMessages.some(
-          (msg) =>
-            msg.senderId === "system" &&
-            msg.content.includes("transferred to a live agent"),
+        const isConfirming = recent.some(
+          (m) =>
+            m.senderId === "system" &&
+            m.content.includes("transferred to a live agent"),
         );
 
-        if (hasTransferRequest) {
+        if (isConfirming) {
           if (lowerContent === "yes") {
             conversationAdminStatus.set(conversationId, true);
             io.emit("system_offline_for_conversation", conversationId);
@@ -244,47 +234,38 @@ export function handleSocketConnection(io, socket) {
                 conversationId,
                 "You've been connected to our support team. An agent will be with you shortly.",
               );
+
+              const user = await db.get("SELECT * FROM users WHERE id = ?", [
+                senderId,
+              ]);
+              if (user) {
+                notifyAdminNewChat(
+                  `${user.firstName} ${user.lastName}`,
+                  user.phone,
+                  user.email,
+                ).catch((err) => console.error("Email notify error:", err));
+              }
             }, 500);
-            const user = await db.get("SELECT * FROM users WHERE id = ?", [
-              senderId,
-            ]);
-            if (user) {
-              notifyAdminNewChat(
-                `${user.firstName} ${user.lastName}`,
-                `${user.phone}`,
-                user.email,
-              ).catch((err) =>
-                console.error("Error sending admin notification:", err),
-              );
-            }
           } else {
-            setTimeout(async () => {
-              await sendSystemMessage(
-                io,
-                conversationId,
-                "No problem! I'm here to help. What can I assist you with?",
-              );
-            }, 500);
+            await sendSystemMessage(
+              io,
+              conversationId,
+              "No problem! I'm here to help. What can I assist you with?",
+            );
           }
           return;
         }
       }
 
-      // AI auto-response (only if admin hasn't taken over)
-      if (
-        senderId !== "system" &&
-        senderId !== "admin" &&
-        !conversationAdminStatus.get(conversationId)
-      ) {
+      if (senderId !== "system" && senderId !== "admin" && !isAdminHandled) {
         setTimeout(async () => {
           const aiResponse = await generateAIResponse(
             content,
             conversationId,
             db,
           );
-          if (aiResponse) {
+          if (aiResponse)
             await sendSystemMessage(io, conversationId, aiResponse);
-          }
         }, 1000);
       }
     } catch (error) {

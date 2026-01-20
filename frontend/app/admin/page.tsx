@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { useChatStore } from "@/store/chatStore";
 import { User, UserRole, Message, Status } from "@/types";
-import { formatDateTime } from "@/lib/constants";
+import { Console, formatDateTime } from "@/lib/constants";
 import { adminApi } from "@/lib/axios";
 import { getSocket } from "@/lib/socket";
 import { UserProfileModal } from "@/components/admin/UserProfileModal";
@@ -107,7 +107,7 @@ export default function AdminPage() {
       playTone(800, now, 0.1);
       playTone(600, now + 0.12, 0.15);
     } catch (error) {
-      console.error("Error playing sound:", error);
+      Console.error("Error playing sound:", error);
     }
   };
 
@@ -213,7 +213,7 @@ export default function AdminPage() {
         setUsers(response.data);
         setFilteredUsers(response.data);
       } catch (error) {
-        console.error(error);
+        Console.error(error);
       } finally {
         setLoadStatus((prev) => ({ ...prev, users: false }));
       }
@@ -265,7 +265,7 @@ export default function AdminPage() {
         }
         setTimeout(() => setHasPlayedSound(true), 500);
       } catch (error) {
-        console.error(error);
+        Console.error(error);
       } finally {
         setLoadStatus((prev) => ({ ...prev, chat: false }));
       }
@@ -298,7 +298,7 @@ export default function AdminPage() {
       setInput("");
       if (textareaRef.current) textareaRef.current.style.height = "auto";
     } catch (err) {
-      console.error(err);
+      Console.error(err);
     } finally {
       setIsSendingMessage(false);
     }
@@ -367,7 +367,7 @@ export default function AdminPage() {
             description: "Conversation exported to your email!",
           });
         } catch (error) {
-          console.log(error);
+          Console.error(error);
           toast({
             title: "Error",
             description: "Failed to export conversation",
@@ -398,7 +398,7 @@ export default function AdminPage() {
       await adminApi.post("/auth/admin/logout");
       router.push("/admin/auth");
     } catch (err) {
-      console.error(err);
+      Console.error(err);
     }
   };
 
@@ -415,7 +415,6 @@ export default function AdminPage() {
 
   const currentUser = users.find((u) => u.id === selectedUserId);
   const isUserOnline = currentUser && onlineUsers.has(currentUser.id);
-  console.log(isChatFocused, conversationUnreadCounts);
 
   return (
     <div className="flex h-screen bg-gray-100 dark:bg-gray-900 overflow-hidden">

@@ -46,7 +46,7 @@ router.get("/conversations/:userId", async (req, res) => {
   try {
     const db = await openDB();
     const conversations = await db.all(
-      "SELECT * FROM conversations WHERE userId = ? ORDER BY createdAt DESC",
+      "SELECT * FROM conversations WHERE userId = ? ORDER BY createdAt ASC",
       [req.params.userId],
     );
 

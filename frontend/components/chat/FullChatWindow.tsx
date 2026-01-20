@@ -14,6 +14,7 @@ import {
   RotateCcw,
   Send,
   Loader2,
+  Minimize,
 } from "lucide-react";
 import {
   setUserCookie,
@@ -594,7 +595,7 @@ export function FullChatWindow({
                   <span className="w-2 h-2 bg-primary  rounded-full animate-pulse" />
                   Robot Online
                 </span>
-              ) : isSystemOnline ? (
+              ) : isAdminOnline ? (
                 <span className="flex items-center gap-1 text-primary">
                   <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                   Ogooluwani Online
@@ -611,6 +612,17 @@ export function FullChatWindow({
 
         {/* Menu */}
         <div className="flex">
+          <button
+            onClick={() =>
+              router.push(
+                process.env.NEXT_PUBLIC_PORTFOLIO_URL ||
+                  "http://localhost:3000/widget",
+              )
+            }
+            className="p-2 text-primary-text rounded-lg hover:bg-white/20 transition-colors cursor-pointer"
+          >
+            <Minimize size={18} />
+          </button>
           <DarkModeToggle />
           <Menu as="div" className="relative">
             <MenuButton className="p-2 text-primary-text cursor-pointer rounded-lg">

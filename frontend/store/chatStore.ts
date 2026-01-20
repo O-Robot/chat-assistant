@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { Message, User, UserRole } from "@/types";
 import { getSocket } from "@/lib/socket";
+import { Console } from "@/lib/constants";
 
 interface ChatState {
   messages: Message[];
@@ -93,7 +94,7 @@ const playSound = () => {
     oscillator.start(audioContext.currentTime);
     oscillator.stop(audioContext.currentTime + 0.5);
   } catch (error) {
-    console.error("Error playing notification sound:", error);
+    Console.error("Error playing notification sound:", error);
   }
 };
 
@@ -122,7 +123,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { messages } = get();
     const storage = getStorage();
 
-    // Mark the last message as read
     if (messages.length > 0) {
       const lastMessage = messages[messages.length - 1];
       set({
@@ -130,7 +130,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         lastReadMessageId: lastMessage.id,
       });
 
-      // Save to localStorage
       if (storage && lastMessage.conversationId) {
         const key = LAST_READ_PREFIX + lastMessage.conversationId;
         storage.setItem(key, lastMessage.id);
@@ -225,7 +224,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const socket = getSocket();
 
     socket.on("connect", () => {
-      console.log("Socket reconnected");
+      Console.log("Socket reconnected");
       // System is always online
       const { user } = get();
       if (user?.id) {
@@ -268,7 +267,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     socket.on("system_offline_for_conversation", (conversationId: string) => {
       // Remove system from online users for this specific conversation
-      console.log("System offline for conversation:", conversationId);
+      Console.log("System offline for conversation:", conversationId);
       set((state) => {
         const newOnlineUsers = new Set(state.onlineUsers);
         newOnlineUsers.delete("system");
@@ -281,7 +280,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
 
     socket.on("conversation_closed", (conversationId: string) => {
-      console.log("Conversation closed:", conversationId);
+      Console.log("Conversation closed:", conversationId);
       // Don't clear messages - just mark as closed
       set({ conversationClosed: true });
     });
@@ -316,7 +315,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const socket = getSocket();
       socket.emit("send_message", message);
     } catch (error) {
-      console.error("Error sending message:", error);
+      Console.error("Error sending message:", error);
     } finally {
       set({ isSendingMessage: false });
     }

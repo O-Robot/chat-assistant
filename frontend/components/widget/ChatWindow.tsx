@@ -17,6 +17,7 @@ import {
   EllipsisVertical,
   Loader2,
   LogOut,
+  Maximize,
   RotateCcw,
   Send,
   X,
@@ -35,6 +36,7 @@ import {
   Transition,
 } from "@headlessui/react";
 import { ConfirmationModal } from "../shared/ConfirmationModal";
+import { useRouter } from "next/navigation";
 
 export const ChatWindow = ({ onClose }: any) => {
   const {
@@ -57,12 +59,11 @@ export const ChatWindow = ({ onClose }: any) => {
     initializeSocketListeners,
   } = useChatStore();
   const confirmation = useConfirmationModal();
-
+  const router = useRouter();
   const [input, setInput] = useState("");
   const [isSubmittingForm, setIsSubmittingForm] = useState(false);
   const [isFocus, setFocus] = useState(false);
   const [conversationClosed, setConversationClosed] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -105,10 +106,8 @@ export const ChatWindow = ({ onClose }: any) => {
         return;
       }
 
-      // Load from local storage first
       loadMessagesFromLocalStorage(conversationId);
 
-      // Then fetch from server and update
       try {
         const response = await userApi.get(
           `/api/conversations/${conversationId}/messages/`,
@@ -569,6 +568,16 @@ export const ChatWindow = ({ onClose }: any) => {
         </div>
 
         <div className="flex gap-1">
+          <button
+            onClick={() =>
+              router.push(
+                process.env.NEXT_PUBLIC_CHAT_URL || "http://localhost:3000",
+              )
+            }
+            className="p-2 text-white rounded-lg hover:bg-white/20 transition-colors cursor-pointer"
+          >
+            <Maximize size={18} />
+          </button>
           <div className="relative">
             <Menu as="div" className="relative">
               <MenuButton className="p-2 text-white  cursor-pointer rounded-lg hover:bg-white/20">
