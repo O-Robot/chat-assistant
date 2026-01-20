@@ -48,6 +48,8 @@ export default function AdminPage() {
     initializeSocketListeners,
     startTyping,
     stopTyping,
+    setIsChatFocused,
+    isChatFocused,
   } = useChatStore();
 
   const [users, setUsers] = useState<User[]>([]);
@@ -57,6 +59,10 @@ export default function AdminPage() {
   const [conversations, setConversations] = useState<
     { id: string; messages: Message[]; createdAt: string; status: string }[]
   >([]);
+  const [conversationUnreadCounts, setConversationUnreadCounts] = useState<
+    Record<string, number>
+  >({});
+
   const [minimized, setMinimized] = useState<Record<string, boolean>>({});
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -143,6 +149,15 @@ export default function AdminPage() {
       );
     });
 
+    socket.on("receive_message", (message: Message) => {
+      if (message.senderId !== selectedUserId && message.senderId !== "admin") {
+        setConversationUnreadCounts((prev) => ({
+          ...prev,
+          [message.senderId]: (prev[message.senderId] || 0) + 1,
+        }));
+      }
+    });
+
     return () => {
       socket.off("user_typing");
       socket.off("user_stopped_typing");
@@ -205,6 +220,10 @@ export default function AdminPage() {
       return;
     }
     setLoadStatus((prev) => ({ ...prev, chat: true }));
+    setConversationUnreadCounts((prev) => ({
+      ...prev,
+      [selectedUserId]: 0,
+    }));
 
     async function fetchConversations() {
       try {
@@ -300,6 +319,7 @@ export default function AdminPage() {
       },
     });
   };
+
   const handleSendTranscript = async (email?: any) => {
     if (!email) return;
     const activeConv = conversations[conversations.length - 1];
@@ -357,8 +377,20 @@ export default function AdminPage() {
     }
   };
 
+  const handleSelectUser = (userId?: string) => {
+    if (!userId) {
+      setSelectedUserId(null);
+      setIsChatFocused(false);
+      return;
+    }
+    setSelectedUserId(userId);
+    setIsChatFocused(true);
+    setSidebarOpen(false);
+  };
+
   const currentUser = users.find((u) => u.id === selectedUserId);
   const isUserOnline = currentUser && onlineUsers.has(currentUser.id);
+  console.log(isChatFocused, conversationUnreadCounts);
 
   return (
     <div className="flex h-screen bg-gray-100 dark:bg-gray-900 overflow-hidden">
@@ -419,8 +451,7 @@ export default function AdminPage() {
               <div
                 key={u.id}
                 onClick={() => {
-                  setSelectedUserId(u.id);
-                  setSidebarOpen(false);
+                  handleSelectUser(u.id);
                 }}
                 className={`p-4 border-b border-primary/20 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
                   selectedUserId === u.id ? "bg-gray-50 dark:bg-gray-700" : ""
@@ -438,9 +469,16 @@ export default function AdminPage() {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-900 dark:text-white truncate">
-                      {u.firstName} {u.lastName}
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="font-semibold text-gray-900 dark:text-white truncate">
+                        {u.firstName} {u.lastName}
+                      </p>
+                      {conversationUnreadCounts[u.id] > 0 && (
+                        <span className="ml-2 flex items-center justify-center min-w-5 h-5 px-1.5 bg-red-500 text-white text-xs font-bold rounded-full">
+                          {conversationUnreadCounts[u.id]}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
                       {u.email}
                     </p>
@@ -501,7 +539,7 @@ export default function AdminPage() {
                       <MenuItem>
                         {({ active }: any) => (
                           <button
-                            onClick={() => setSelectedUserId(null)}
+                            onClick={() => handleSelectUser()}
                             className={`${active ? "bg-gray-100 " : ""} w-full px-4 py-2 text-left text-sm rounded-lg cursor-pointer flex items-center gap-2 `}
                           >
                             Close
@@ -514,7 +552,7 @@ export default function AdminPage() {
                             onClick={() => setProfileUser(currentUser)}
                             className={`${active ? "bg-gray-100 " : ""} w-full px-4 py-2 text-left text-sm rounded-lg cursor-pointer flex items-center gap-2 `}
                           >
-                            <UserIcon/>
+                            <UserIcon />
                             View Profile
                           </button>
                         )}

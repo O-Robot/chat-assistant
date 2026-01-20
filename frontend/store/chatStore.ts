@@ -157,17 +157,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     // Calculate unread count
     let unreadCount = 0;
+    const { user } = get();
+
     if (lastReadMessageId && storedMessages.length > 0) {
       const lastReadIndex = storedMessages.findIndex(
         (m) => m.id === lastReadMessageId,
       );
       if (lastReadIndex !== -1) {
-        const { user } = get();
-        // Count messages after the last read message that aren't from current user
         unreadCount = storedMessages
           .slice(lastReadIndex + 1)
-          .filter((m) => m.senderId !== user?.id).length;
+          .filter(
+            (m) => m.senderId !== user?.id && m.senderId !== undefined,
+          ).length;
+      } else {
+        unreadCount = storedMessages.filter(
+          (m) => m.senderId !== user?.id && m.senderId !== undefined,
+        ).length;
       }
+    } else if (storedMessages.length > 0) {
+      unreadCount = storedMessages.filter(
+        (m) => m.senderId !== user?.id && m.senderId !== undefined,
+      ).length;
     }
 
     set({
