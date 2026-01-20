@@ -14,7 +14,6 @@ router.post("/login", (req, res) => {
   const result = loginAdmin(email, password);
 
   if (result.success) {
-    console.log("Prod", isProduction);
     res.cookie("whoami", result.token, {
       httpOnly: true,
       secure: isProduction,

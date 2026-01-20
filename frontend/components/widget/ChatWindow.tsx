@@ -180,8 +180,6 @@ export const ChatWindow = ({ onClose }: any) => {
     };
   }, [user?.id]);
 
-  console.log(user);
-
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, typingUsers]);
@@ -283,7 +281,6 @@ export const ChatWindow = ({ onClose }: any) => {
     if (!input.trim() || !user || isSendingMessage) return;
 
     const conversationId = getConversationCookie();
-    console.log(conversationId);
     if (!conversationId) return;
 
     const message: Omit<Message, "id" | "timestamp"> = {
@@ -355,7 +352,6 @@ export const ChatWindow = ({ onClose }: any) => {
           socket.emit("close_conversation", conversationId);
         }
 
-        console.log("This", conversationId);
         setConversationClosed(true);
       },
     });

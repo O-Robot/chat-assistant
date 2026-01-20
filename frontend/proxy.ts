@@ -4,7 +4,6 @@ import type { NextRequest } from "next/server";
 
 export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  // console.log("Middleware triggered for path:", pathname, request.cookies);
   if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/auth")) {
     const token = request.cookies.get("whoami")?.value;
 

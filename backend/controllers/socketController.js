@@ -276,8 +276,6 @@ export function handleSocketConnection(io, socket) {
   // Typing indicators - broadcast to EVERYONE
   socket.on("typing_start", (conversationId) => {
     const userData = userSockets.get(socket.id);
-    console.log(userData, conversationId);
-    console.log("Hello", socket.id);
     if (!userData || !conversationId) return;
 
     io.emit("user_typing", { id: userData.id, conversationId });

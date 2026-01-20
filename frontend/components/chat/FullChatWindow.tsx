@@ -316,7 +316,6 @@ export function FullChatWindow({
     if (!input.trim() || !user || isSendingMessage) return;
 
     const conversationId = getConversationCookie();
-    console.log(conversationId);
     if (!conversationId) return;
 
     const message: Omit<Message, "id" | "timestamp"> = {
@@ -389,11 +388,7 @@ export function FullChatWindow({
           socket.emit("close_conversation", conversationId);
         }
 
-        console.log("This", conversationId);
         setConversationClosed(true);
-        // removeConversationCookie();
-        // clearMessages();
-        // onClose();
       },
     });
   };
