@@ -396,7 +396,7 @@ export default function AdminPage() {
     if (!activeConv) return;
     confirmation.showConfirmation({
       title: "Export Conversation?",
-      message: "We'll send the conversation transcript to your email.",
+      message: `We'll send the conversation transcript to ${email}.`,
       confirmText: "Export",
       cancelText: "Cancel",
       variant: "info",
@@ -409,7 +409,7 @@ export default function AdminPage() {
           );
           toast({
             title: "Success",
-            description: "Conversation exported to your email!",
+            description: `Conversation exported to ${email}`,
           });
         } catch (error) {
           Console.error(error);
