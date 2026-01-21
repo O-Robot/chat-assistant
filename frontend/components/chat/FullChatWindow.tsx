@@ -40,6 +40,7 @@ import { getSocket } from "@/lib/socket";
 import { userApi } from "@/lib/axios";
 import { useConfirmationModal } from "@/hooks/use-modal";
 import { ConfirmationModal } from "../shared/ConfirmationModal";
+import { sanitizedContent } from "@/lib/constants";
 
 interface FullChatWindowProps {
   initialQuestion?: string;
@@ -65,6 +66,7 @@ export function FullChatWindow({
     onlineUsers,
     isLoadingMessages,
     isSendingMessage,
+    isAIResponding,
     setLoadingMessages,
     loadMessagesFromLocalStorage,
     saveMessagesToLocalStorage,
@@ -313,6 +315,16 @@ export function FullChatWindow({
 
   //! Send message
   const handleSend = async () => {
+    const isAdminMode = onlineUsers.has("admin") && !onlineUsers.has("system");
+
+    if (!isAdminMode && isAIResponding) {
+      toast({
+        title: "Please wait",
+        description: "Robot is thinking... Please wait for the response.",
+        variant: "default",
+      });
+      return;
+    }
     if (!input.trim() || !user || isSendingMessage) return;
 
     const conversationId = getConversationCookie();
@@ -474,6 +486,13 @@ export function FullChatWindow({
         description: "Failed to start new conversation.",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleKeyDown = (e: any) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
     }
   };
 
@@ -692,10 +711,10 @@ export function FullChatWindow({
               return (
                 <div
                   key={i}
-                  className={`flex max-w-[80%] md:max-w-[60%] min-w-20 rounded-2xl px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap wrap-break-word text-base items-end gap-3 ${
+                  className={`flex max-w-[80%] md:max-w-[60%] text-left min-w-20 rounded-2xl px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap wrap-break-word text-base items-end gap-3 ${
                     isUserMessage
-                      ? "ml-auto text-right flex-row-reverse"
-                      : "mr-auto justify-start text-left flex-row"
+                      ? "ml-auto  flex-row-reverse"
+                      : "mr-auto justify-start  flex-row"
                   }`}
                   style={{
                     wordBreak: "break-word",
@@ -718,8 +737,12 @@ export function FullChatWindow({
                         : "bg-white/60 text-gray-900 border border-gray-200"
                     }`}
                   >
-                    {msg.content}
-
+                    <div
+                      className="chat-content"
+                      dangerouslySetInnerHTML={{
+                        __html: sanitizedContent(msg.content),
+                      }}
+                    />
                     <span className="mt-1 text-[11px] text-gray-500 self-end">
                       {new Date(msg.timestamp).toLocaleTimeString("en-GB", {
                         hour: "2-digit",
@@ -801,13 +824,8 @@ export function FullChatWindow({
                   ta.style.overflowY =
                     ta.scrollHeight > maxHeight ? "auto" : "hidden";
                 }}
-                onKeyDown={async (e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    await handleSend();
-                  }
-                }}
-                placeholder="Ask me anything..."
+                onKeyDown={handleKeyDown}
+                placeholder={isAIResponding ? "Thinking..." : "Ask anything"}
                 disabled={isSendingMessage}
                 className="w-full resize-none bg-transparent p-2 pr-3 mb-1 text-base text-skill-text placeholder-primary-text/50 focus:outline-none focus:ring-0 max-h-50 overflow-hidden disabled:opacity-50"
                 style={{
@@ -825,14 +843,21 @@ export function FullChatWindow({
               <button
                 onClick={async () => await handleSend()}
                 aria-label="Send message"
-                disabled={!input.trim() || isSendingMessage}
+                disabled={
+                  !input.trim() ||
+                  isSendingMessage ||
+                  (isAIResponding && !onlineUsers.has("admin"))
+                }
                 className={`ml-2 flex items-center justify-center rounded-full p-2 transition-all duration-200 ${
-                  input.trim() && !isSendingMessage
+                  input.trim() &&
+                  !isSendingMessage &&
+                  !(isAIResponding && !onlineUsers.has("admin"))
                     ? "bg-primary/80 text-white hover:opacity-90 cursor-pointer"
                     : "text-gray-400 cursor-not-allowed"
                 }`}
               >
-                {isSendingMessage ? (
+                {isSendingMessage ||
+                (isAIResponding && !onlineUsers.has("admin")) ? (
                   <Loader2 size={16} className="animate-spin" />
                 ) : (
                   <ArrowUp size={16} />

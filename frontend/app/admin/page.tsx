@@ -20,10 +20,18 @@ import {
   Send,
   LogOutIcon,
   UserIcon,
+  Ban,
+  MessageCircleX,
 } from "lucide-react";
 import { useChatStore } from "@/store/chatStore";
 import { User, UserRole, Message, Status } from "@/types";
-import { Console, formatDateTime } from "@/lib/constants";
+import {
+  Console,
+  formatDateTime,
+  formats,
+  modules,
+  sanitizedContent,
+} from "@/lib/constants";
 import { adminApi } from "@/lib/axios";
 import { getSocket } from "@/lib/socket";
 import { UserProfileModal } from "@/components/admin/UserProfileModal";
@@ -32,6 +40,12 @@ import { ConfirmationModal } from "@/components/shared/ConfirmationModal";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { DarkModeToggle } from "@/components/shared/DarkModeToggle";
+
+const ReactQuill = dynamic(() => import("react-quill-new"), {
+  ssr: false,
+});
+import "react-quill-new/dist/quill.snow.css";
+import dynamic from "next/dynamic";
 
 export default function AdminPage() {
   const router = useRouter();
@@ -49,7 +63,6 @@ export default function AdminPage() {
     startTyping,
     stopTyping,
     setIsChatFocused,
-    isChatFocused,
   } = useChatStore();
 
   const [users, setUsers] = useState<User[]>([]);
@@ -68,6 +81,8 @@ export default function AdminPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [input, setInput] = useState("");
+  const [isFocus, setFocus] = useState(false);
+
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [hasPlayedSound, setHasPlayedSound] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -81,6 +96,44 @@ export default function AdminPage() {
   const lastMessageCountRef = useRef(0);
 
   const confirmation = useConfirmationModal();
+  const isInputEmpty =
+    input
+      .replace(/<(.|\n)*?>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .trim().length === 0;
+
+  const handleKeyDown = (e: any) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const startTypingEmit = () => {
+    const activeConv = conversations[conversations.length - 1];
+    if (!activeConv) return;
+    const socket = getSocket();
+    socket.emit("typing_start", activeConv.id);
+  };
+
+  const stopTypingEmit = () => {
+    const activeConv = conversations[conversations.length - 1];
+    if (!activeConv) return;
+    const socket = getSocket();
+    socket.emit("typing_stop", activeConv.id);
+  };
+
+  useEffect(() => {
+    if (isFocus) {
+      startTypingEmit();
+    } else {
+      stopTypingEmit();
+    }
+
+    return () => {
+      stopTypingEmit();
+    };
+  }, [isFocus]);
 
   const playNotificationSound = () => {
     try {
@@ -279,7 +332,7 @@ export default function AdminPage() {
   }, [messages, typingUsers]);
 
   const handleSend = async () => {
-    if (!input.trim()) return;
+    if (isInputEmpty) return;
     const activeConv = conversations[conversations.length - 1];
     if (!activeConv) return;
 
@@ -302,14 +355,6 @@ export default function AdminPage() {
     } finally {
       setIsSendingMessage(false);
     }
-  };
-
-  const handleTyping = () => {
-    const activeConv = conversations[conversations.length - 1];
-    if (!activeConv) return;
-    const socket = getSocket();
-    socket.emit("typing_start", activeConv.id);
-    setTimeout(() => socket.emit("typing_stop", activeConv.id), 1500);
   };
 
   const handleExport = async () => {
@@ -606,16 +651,17 @@ export default function AdminPage() {
                           </button>
                         )}
                       </MenuItem>
-                      {conversations[conversations.length - 1]?.status ===
-                        "open" && (
+
+                      {conversations[conversations.length - 1]?.status !==
+                        "closed" && (
                         <MenuItem>
                           {({ active }: any) => (
                             <button
                               onClick={handleCloseConversation}
                               className={`${active ? "bg-gray-100 " : ""} w-full px-4 py-2 text-left text-sm text-red-600 rounded-lg cursor-pointer flex items-center gap-2 `}
                             >
-                              <LogOutIcon size={16} />
-                              End Chat
+                              <MessageCircleX size={16} />
+                              End Conversation
                             </button>
                           )}
                         </MenuItem>
@@ -671,7 +717,7 @@ export default function AdminPage() {
                                 key={idx}
                                 className={`flex max-w-[80%] md:max-w-[60%] min-w-20 rounded-2xl px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap wrap-break-word text-base items-end gap-3 ${
                                   isAdmin
-                                    ? "ml-auto text-right flex-row-reverse"
+                                    ? "ml-auto  flex-row-reverse"
                                     : "mr-auto justify-start text-left flex-row"
                                 }`}
                                 style={{
@@ -695,7 +741,12 @@ export default function AdminPage() {
                                       : "glass-morphism text-primary-text"
                                   }`}
                                 >
-                                  {msg.content}
+                                  <div
+                                    className="chat-content"
+                                    dangerouslySetInnerHTML={{
+                                      __html: sanitizedContent(msg.content),
+                                    }}
+                                  />
 
                                   <span className="mt-1 text-[11px] text-gray-500 self-end">
                                     {new Date(msg.timestamp).toLocaleTimeString(
@@ -747,33 +798,30 @@ export default function AdminPage() {
               conversations[conversations.length - 1]?.status !== "closed" && (
                 <div className="p-4 bg-white dark:bg-gray-800 border-t shrink-0">
                   <div className="flex flex-col sm:flex-row items-end gap-2">
-                    <textarea
-                      ref={textareaRef}
-                      rows={1}
-                      value={input}
-                      onChange={(e) => {
-                        setInput(e.target.value);
-                        handleTyping();
-                      }}
-                      onInput={(e) => {
-                        const ta = e.currentTarget;
-                        ta.style.height = "auto";
-                        ta.style.height = Math.min(ta.scrollHeight, 100) + "px";
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          handleSend();
-                        }
-                      }}
-                      placeholder="Type a message..."
-                      disabled={isSendingMessage}
-                      className="flex-1 resize-none rounded-lg border border-gray-300 dark:border-gray-600 p-3 focus:outline-none focus:border-primary bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                    />
+                    <div className="flex-1 min-w-0 rich-text-wrapper">
+                      <ReactQuill
+                        theme="snow"
+                        value={input}
+                        onChange={(content) => {
+                          setInput(content);
+                        }}
+                        onFocus={() => setFocus(true)}
+                        onBlur={() => setFocus(false)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSend();
+                          }
+                        }}
+                        placeholder="Type a message..."
+                        modules={modules}
+                        formats={formats}
+                      />
+                    </div>
                     <button
-                      onClick={handleSend}
-                      disabled={!input.trim() || isSendingMessage}
-                      className={`p-3 rounded-full ${input.trim() && !isSendingMessage ? "bg-primary text-white hover:opacity-90" : "bg-gray-300 text-gray-500 cursor-not-allowed"}`}
+                      onClick={() => handleSend()}
+                      disabled={isInputEmpty || isSendingMessage}
+                      className={`p-3 rounded-full ${!isInputEmpty && !isSendingMessage ? "bg-primary text-white hover:opacity-90 cursor-pointer" : "bg-gray-300 text-gray-500 cursor-not-allowed"}`}
                     >
                       {isSendingMessage ? (
                         <Loader2 size={20} className="animate-spin" />

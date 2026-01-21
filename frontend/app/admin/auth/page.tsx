@@ -14,7 +14,7 @@ export default function AdminAuthPage() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [form, setForm] = useState({
-    email: "admin@example.com",
+    email: "ogooluwaniadewale@gmail.com",
     password: "admin123",
   });
 

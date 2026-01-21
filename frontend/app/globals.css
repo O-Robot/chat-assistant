@@ -208,3 +208,84 @@ html {
     opacity: 0.4;
   }
 }
+
+.rich-text-wrapper {
+  width: 100%;
+  overflow: hidden;
+}
+
+.rich-text-wrapper .ql-container.ql-snow {
+  border: 1px solid var(--primary) !important;
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.rich-text-wrapper .ql-editor {
+  min-height: 100px;
+  max-height: 150px;
+  overflow-y: auto;
+  width: 100%;
+  padding: 8px 12px;
+  line-height: 1.5;
+}
+
+.dark .rich-text-wrapper .ql-container.ql-snow {
+  border-color: #4b5563 !important;
+  background-color: #374151;
+  color: white;
+}
+
+.dark .ql-formats .ql-stroke {
+  stroke: #f3f4f6 !important;
+}
+
+.dark .ql-snow .ql-toolbar button:hover .ql-stroke,
+.dark .ql-snow.ql-toolbar button:hover .ql-stroke {
+  stroke: var(--accent) !important;
+}
+.dark .ql-formats .ql-fill,
+.dark .ql-formats .ql-even {
+  fill: #f3f4f6 !important;
+}
+
+.dark .ql-editor.ql-blank::before {
+  color: #9ca3af !important;
+  font-style: normal;
+}
+.ql-editor {
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+/* Styling for Rich Text inside chat bubbles */
+.chat-content ul {
+  list-style-type: disc !important;
+  margin-left: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.chat-content ol {
+  list-style-type: decimal;
+  margin-left: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.chat-content li {
+  display: list-item;
+}
+
+.chat-content a {
+  color: #3b82f6;
+  text-decoration: none;
+  transition: text-decoration 0.2s;
+}
+
+.chat-content a:hover {
+  text-decoration: underline;
+}
+
+.chat-content p {
+  margin-bottom: 0.5rem;
+}

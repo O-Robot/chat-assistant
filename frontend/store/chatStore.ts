@@ -14,6 +14,7 @@ interface ChatState {
   typingUsers: Set<string>;
   isLoadingMessages: boolean;
   isSendingMessage: boolean;
+  isAIResponding: boolean;
   hasPlayedNotificationOnLoad: boolean;
   conversationClosed: boolean;
   unreadCount: number;
@@ -34,6 +35,7 @@ interface ChatState {
   clearChat: () => void;
   setLoadingMessages: (loading: boolean) => void;
   setSendingMessage: (sending: boolean) => void;
+  setAIResponding: (responding: boolean) => void;
   loadMessagesFromLocalStorage: (conversationId: string) => void;
   saveMessagesToLocalStorage: (conversationId: string) => void;
   playNotificationSound: () => void;
@@ -109,6 +111,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   typingUsers: new Set(),
   isLoadingMessages: false,
   isSendingMessage: false,
+  isAIResponding: false,
   hasPlayedNotificationOnLoad: false,
   conversationClosed: false,
   unreadCount: 0,
@@ -116,6 +119,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setLoadingMessages: (loading) => set({ isLoadingMessages: loading }),
   setSendingMessage: (sending) => set({ isSendingMessage: sending }),
+  setAIResponding: (responding) => set({ isAIResponding: responding }),
   setHasPlayedNotificationOnLoad: (value) =>
     set({ hasPlayedNotificationOnLoad: value }),
 
@@ -266,7 +270,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
 
     socket.on("system_offline_for_conversation", (conversationId: string) => {
-      // Remove system from online users for this specific conversation
       Console.log("System offline for conversation:", conversationId);
       set((state) => {
         const newOnlineUsers = new Set(state.onlineUsers);
@@ -275,14 +278,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     });
 
+    socket.on("user_typing", (data: { id: string; conversationId: string }) => {
+      if (data.id === "system") {
+        get().setAIResponding(true);
+        get().startTyping("system");
+      } else {
+        get().startTyping(data.id);
+      }
+    });
+
+    socket.on(
+      "user_stopped_typing",
+      (data: { id: string; conversationId: string }) => {
+        if (data.id === "system") {
+          get().setAIResponding(false);
+          get().stopTyping("system");
+        } else {
+          get().stopTyping(data.id);
+        }
+      },
+    );
+
     socket.on("receive_message", (message: Message) => {
       get().receiveMessage(message);
+
+      // If message is from system, AI is done responding
+      if (message.senderId === "system") {
+        get().setAIResponding(false);
+      }
     });
 
     socket.on("conversation_closed", (conversationId: string) => {
       Console.log("Conversation closed:", conversationId);
-      // Don't clear messages - just mark as closed
-      set({ conversationClosed: true });
+      set({ conversationClosed: true, isAIResponding: false });
     });
   },
 
@@ -291,7 +319,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   sendMessage: async (messageData) => {
-    const { user, isSendingMessage } = get();
+    const { user, isSendingMessage, isAIResponding, onlineUsers } = get();
+
+    const isAdminMode = onlineUsers.has("admin") && !onlineUsers.has("system");
+    if (!isAdminMode && isAIResponding) {
+      Console.log("AI is responding, message blocked");
+      return;
+    }
+
     if (!user || isSendingMessage) return;
 
     set({ isSendingMessage: true });
@@ -303,15 +338,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         timestamp: Date.now(),
       };
 
-      // Optimistically add to local state
       set((state) => ({
         messages: [...state.messages, message],
       }));
 
-      // Save to local storage
       get().saveMessagesToLocalStorage(message.conversationId);
 
-      // Emit through socket
       const socket = getSocket();
       socket.emit("send_message", message);
     } catch (error) {
@@ -322,7 +354,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   receiveMessage: (msg) => {
-    const { user, messages, isChatFocused, lastReadMessageId } = get();
+    const { user, messages, isChatFocused } = get();
 
     // Check if message already exists
     const exists = messages.some((m) => m.id === msg.id);
@@ -332,18 +364,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: [...state.messages, msg],
     }));
 
-    // Save to local storage
     get().saveMessagesToLocalStorage(msg.conversationId);
 
-    // Handle unread count and notifications for messages from others
     if (msg.senderId !== user?.id) {
-      // Increment unread count if chat is not focused
-      // Also increment if this message is after the last read message
       if (!isChatFocused) {
         get().incrementUnreadCount();
       }
 
-      // Play notification sound
       get().playNotificationSound();
     }
   },
@@ -356,7 +383,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } else {
         newOnlineUsers.delete(userId);
       }
-      // System is always online unless explicitly removed
       if (userId !== "system") {
         newOnlineUsers.add("system");
       }
@@ -373,7 +399,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setIsChatFocused: (focused) => {
     set({ isChatFocused: focused });
-    // Reset unread count when chat becomes focused
     if (focused) {
       get().resetUnreadCount();
     }
@@ -394,6 +419,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       hasPlayedNotificationOnLoad: false,
       unreadCount: 0,
       lastReadMessageId: null,
+      isAIResponding: false,
     });
   },
 

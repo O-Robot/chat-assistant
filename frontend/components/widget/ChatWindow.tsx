@@ -37,6 +37,7 @@ import {
 } from "@headlessui/react";
 import { ConfirmationModal } from "../shared/ConfirmationModal";
 import { useRouter } from "next/navigation";
+import { sanitizedContent } from "@/lib/constants";
 
 export const ChatWindow = ({ onClose }: any) => {
   const {
@@ -51,6 +52,7 @@ export const ChatWindow = ({ onClose }: any) => {
     onlineUsers,
     isLoadingMessages,
     isSendingMessage,
+    isAIResponding,
     setLoadingMessages,
     sendMessage,
     loadMessagesFromLocalStorage,
@@ -278,6 +280,17 @@ export const ChatWindow = ({ onClose }: any) => {
 
   //! Send message
   const handleSend = async () => {
+    const isAdminMode = onlineUsers.has("admin") && !onlineUsers.has("system");
+
+    if (!isAdminMode && isAIResponding) {
+      toast({
+        title: "Please wait",
+        description: "Robot is thinking... Please wait for the response.",
+        variant: "default",
+      });
+      return;
+    }
+
     if (!input.trim() || !user || isSendingMessage) return;
 
     const conversationId = getConversationCookie();
@@ -677,7 +690,12 @@ export const ChatWindow = ({ onClose }: any) => {
                     }`}
                   >
                     <p className="text-sm whitespace-pre-wrap wrap-break-word">
-                      {msg.content}
+                      <div
+                        className="chat-content"
+                        dangerouslySetInnerHTML={{
+                          __html: sanitizedContent(msg.content),
+                        }}
+                      />
                     </p>
                     <span className="text-[10px] opacity-70 mt-1 block">
                       {new Date(msg.timestamp).toLocaleTimeString("en-GB", {
@@ -773,7 +791,7 @@ export const ChatWindow = ({ onClose }: any) => {
                     await handleSend();
                   }
                 }}
-                placeholder="Ask me anything..."
+                placeholder={isAIResponding ? "Thinking..." : "Ask anything"}
                 disabled={isSendingMessage}
                 className="w-full resize-none bg-transparent p-1 pr-3 mb-1 text-base text-skill-text placeholder-primary-text/50 focus:outline-none focus:ring-0 max-h-50 overflow-hidden disabled:opacity-50"
                 style={{
@@ -790,14 +808,21 @@ export const ChatWindow = ({ onClose }: any) => {
               <button
                 onClick={async () => await handleSend()}
                 aria-label="Send message"
-                disabled={!input.trim() || isSendingMessage}
+                disabled={
+                  !input.trim() ||
+                  isSendingMessage ||
+                  (isAIResponding && !onlineUsers.has("admin"))
+                }
                 className={`ml-2 flex items-center justify-center rounded-full p-2 transition-all duration-200 ${
-                  input.trim() && !isSendingMessage
+                  input.trim() &&
+                  !isSendingMessage &&
+                  !(isAIResponding && !onlineUsers.has("admin"))
                     ? "bg-primary/80 text-white hover:opacity-90 cursor-pointer"
                     : "text-gray-400 cursor-not-allowed"
                 }`}
               >
-                {isSendingMessage ? (
+                {isSendingMessage ||
+                (isAIResponding && !onlineUsers.has("admin")) ? (
                   <Loader2 size={16} className="animate-spin" />
                 ) : (
                   <ArrowUp size={16} />
