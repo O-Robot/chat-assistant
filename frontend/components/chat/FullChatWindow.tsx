@@ -41,6 +41,8 @@ import { userApi } from "@/lib/axios";
 import { useConfirmationModal } from "@/hooks/use-modal";
 import { ConfirmationModal } from "../shared/ConfirmationModal";
 import { sanitizedContent } from "@/lib/constants";
+import { useSocketConnection } from "@/hooks/useSocketConnection";
+import { ReconnectionIndicator } from "../shared/ReconnectionIndicator";
 
 interface FullChatWindowProps {
   initialQuestion?: string;
@@ -51,6 +53,7 @@ export function FullChatWindow({
   initialQuestion = "",
   onClose,
 }: FullChatWindowProps) {
+  useSocketConnection();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -585,6 +588,7 @@ export function FullChatWindow({
 
   return (
     <div className="flex flex-col h-full w-full">
+      <ReconnectionIndicator />
       <div className="flex justify-between items-center p-4 border-b border-primary-text/20">
         <div
           className="flex items-center gap-2 cursor-pointer"

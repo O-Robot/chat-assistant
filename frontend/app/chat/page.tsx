@@ -22,10 +22,11 @@ export default function VisitorsPage() {
   const { user, setUser } = useChatStore();
 
   const suggestedQuestions = [
-    "Website pricing",
-    "Contract terms",
-    "How to start a project",
-    "Available services",
+    "Hi, I’ll like to develop a website",
+    "What technologies do you use?",
+    "What does a typical project budget look like?",
+    "How to start a project?",
+    "How long does it take to develop a website?",
   ];
 
   const handleQuestionClick = (question: string) => {
@@ -134,15 +135,15 @@ export default function VisitorsPage() {
                   {q}
                 </button>
               ))}
-              <button
-                onClick={() => {
-                  setIsChatMode(true);
-                }}
-                className="cursor-pointer px-4 py-2 glass-morphism text-primary-text shadow-lg rounded-full hover:bg-gray-100 text-sm transition-all duration-200 hover:scale-105"
-              >
-                Have a Chat
-              </button>
             </div>
+            <button
+              onClick={() => {
+                setIsChatMode(true);
+              }}
+              className="cursor-pointer my-3 px-4 py-2 glass-morphism text-primary-text shadow-lg rounded-full hover:bg-gray-100 text-sm transition-all duration-200 hover:scale-105"
+            >
+              Have a Chat
+            </button>
           </div>
         </>
       )}

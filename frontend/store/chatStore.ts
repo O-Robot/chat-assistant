@@ -1,7 +1,8 @@
 import { create } from "zustand";
 import { Message, User, UserRole } from "@/types";
-import { getSocket } from "@/lib/socket";
+import { getSocket, initializeSocket } from "@/lib/socket";
 import { Console } from "@/lib/constants";
+import { getConversationCookie } from "@/lib/cookies";
 
 interface ChatState {
   messages: Message[];
@@ -19,6 +20,9 @@ interface ChatState {
   conversationClosed: boolean;
   unreadCount: number;
   lastReadMessageId: string | null;
+  isReconnecting: boolean;
+  reconnectAttempt: number;
+  connectionStatus: "connected" | "disconnected" | "reconnecting";
 
   startTyping: (userId: string) => void;
   stopTyping: (userId: string) => void;
@@ -43,6 +47,11 @@ interface ChatState {
   setHasPlayedNotificationOnLoad: (value: boolean) => void;
   resetUnreadCount: () => void;
   incrementUnreadCount: () => void;
+  setConnectionStatus: (
+    status: "connected" | "disconnected" | "reconnecting",
+  ) => void;
+  setReconnecting: (isReconnecting: boolean, attempt?: number) => void;
+  handleReconnection: () => void;
 }
 
 const STORAGE_PREFIX = "chat-messages-";
@@ -70,7 +79,7 @@ const stringifyData = (data: Message[]): string => {
   }
 };
 
-// Simple notification sound
+// user notification sound
 const playSound = () => {
   if (typeof window === "undefined") return;
 
@@ -116,7 +125,180 @@ export const useChatStore = create<ChatState>((set, get) => ({
   conversationClosed: false,
   unreadCount: 0,
   lastReadMessageId: null,
+  isReconnecting: false,
+  reconnectAttempt: 0,
+  connectionStatus: "disconnected",
 
+  setConnectionStatus: (status) => set({ connectionStatus: status }),
+
+  setReconnecting: (isReconnecting, attempt = 0) =>
+    set({ isReconnecting, reconnectAttempt: attempt }),
+
+  handleReconnection: () => {
+    const { user } = get();
+    const conversationId = getConversationCookie();
+    const socket = getSocket();
+
+    Console.log("Handling reconnection...", {
+      userId: user?.id,
+      conversationId,
+    });
+
+    if (!user?.id || !conversationId) {
+      Console.warn("Missing user or conversation ID for reconnection");
+      return;
+    }
+
+    const userData = {
+      id: user.id,
+      firstName: user.firstName || "",
+      lastName: user.lastName || "",
+      email: user.email || "",
+      role: user.role || UserRole.VISITOR,
+      status: user.status || "online",
+      conversationId: conversationId,
+    };
+
+    Console.log("Rejoining with user data:", userData);
+
+    socket.emit("user_join", userData);
+
+    Console.log("User rejoined conversation:", conversationId);
+
+    socket.emit("request_sync", conversationId);
+  },
+
+  initializeSocketListeners: () => {
+    const socket = initializeSocket({
+      onReconnecting: (attempt) => {
+        Console.log(`Reconnecting... Attempt ${attempt}`);
+        get().setConnectionStatus("reconnecting");
+        get().setReconnecting(true, attempt);
+      },
+      onReconnected: () => {
+        Console.log("Successfully reconnected!");
+        get().setConnectionStatus("connected");
+        get().setReconnecting(false, 0);
+        get().handleReconnection();
+      },
+      onReconnectFailed: () => {
+        Console.error("Reconnection failed");
+        get().setConnectionStatus("disconnected");
+        get().setReconnecting(false, 0);
+      },
+      onDisconnect: (reason) => {
+        Console.warn("Disconnected:", reason);
+        get().setConnectionStatus("disconnected");
+      },
+    });
+
+    socket.on("connect", () => {
+      Console.log("Socket connected");
+      get().setConnectionStatus("connected");
+      const { user } = get();
+      if (user?.id) {
+        socket.emit("user_join", {
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user?.lastName,
+          email: user.email,
+          role: user.role || UserRole.VISITOR,
+        });
+      }
+      get().updateOnlineStatus("system", true);
+    });
+
+    socket.on("visitor_online", (visitorId: string) => {
+      get().updateOnlineStatus(visitorId, true);
+    });
+
+    socket.on("visitor_offline", (visitorId: string) => {
+      get().updateOnlineStatus(visitorId, false);
+    });
+
+    socket.on("visitors_online", (visitorIds: string[]) => {
+      const allUsers = new Set([...visitorIds, "system"]);
+      set({ onlineUsers: allUsers });
+    });
+
+    socket.on("users_online", (userIds: string[]) => {
+      const allUsers = new Set([...userIds, "system"]);
+      set({ onlineUsers: allUsers });
+    });
+
+    socket.on("user_online", (userId: string) => {
+      get().updateOnlineStatus(userId, true);
+    });
+
+    socket.on("user_offline", (userId: string) => {
+      get().updateOnlineStatus(userId, false);
+    });
+
+    socket.on("system_offline_for_conversation", (conversationId: string) => {
+      Console.log("System offline for conversation:", conversationId);
+      set((state) => {
+        const newOnlineUsers = new Set(state.onlineUsers);
+        newOnlineUsers.delete("system");
+        return { onlineUsers: newOnlineUsers };
+      });
+    });
+
+    socket.on("user_typing", (data: { id: string; conversationId: string }) => {
+      if (data.id === "system") {
+        get().setAIResponding(true);
+        get().startTyping("system");
+      } else {
+        get().startTyping(data.id);
+      }
+    });
+
+    socket.on(
+      "user_stopped_typing",
+      (data: { id: string; conversationId: string }) => {
+        if (data.id === "system") {
+          get().setAIResponding(false);
+          get().stopTyping("system");
+        } else {
+          get().stopTyping(data.id);
+        }
+      },
+    );
+
+    socket.on("receive_message", (message: Message) => {
+      get().receiveMessage(message);
+
+      if (message.senderId === "system") {
+        get().setAIResponding(false);
+      }
+    });
+
+    socket.on("conversation_closed", (conversationId: string) => {
+      Console.log("Conversation closed:", conversationId);
+      set({ conversationClosed: true, isAIResponding: false });
+    });
+
+    socket.on("sync_messages", (messages: Message[]) => {
+      Console.log("Received sync messages:", messages.length);
+
+      const { messages: currentMessages } = get();
+      const existingIds = new Set(currentMessages.map((m) => m.id));
+
+      const newMessages = messages.filter((m) => !existingIds.has(m.id));
+
+      if (newMessages.length > 0) {
+        set((state) => ({
+          messages: [...state.messages, ...newMessages].sort(
+            (a, b) => a.timestamp - b.timestamp,
+          ),
+        }));
+
+        const conversationId = getConversationCookie();
+        if (conversationId) {
+          get().saveMessagesToLocalStorage(conversationId);
+        }
+      }
+    });
+  },
   setLoadingMessages: (loading) => set({ isLoadingMessages: loading }),
   setSendingMessage: (sending) => set({ isSendingMessage: sending }),
   setAIResponding: (responding) => set({ isAIResponding: responding }),
@@ -219,99 +401,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
-        role: user.role,
+        role: user.role || UserRole.VISITOR,
       });
     }
-  },
-
-  initializeSocketListeners: () => {
-    const socket = getSocket();
-
-    socket.on("connect", () => {
-      Console.log("Socket reconnected");
-      // System is always online
-      const { user } = get();
-      if (user?.id) {
-        socket.emit("user_join", {
-          id: user.id,
-          firstName: user.firstName,
-          lastName: user?.lastName,
-          email: user.email,
-          role: user.role,
-        });
-      }
-      get().updateOnlineStatus("system", true);
-    });
-
-    socket.on("visitor_online", (visitorId: string) => {
-      get().updateOnlineStatus(visitorId, true);
-    });
-
-    socket.on("visitor_offline", (visitorId: string) => {
-      get().updateOnlineStatus(visitorId, false);
-    });
-
-    socket.on("visitors_online", (visitorIds: string[]) => {
-      const allUsers = new Set([...visitorIds, "system"]);
-      set({ onlineUsers: allUsers });
-    });
-
-    socket.on("users_online", (userIds: string[]) => {
-      const allUsers = new Set([...userIds, "system"]);
-      set({ onlineUsers: allUsers });
-    });
-
-    socket.on("user_online", (userId: string) => {
-      get().updateOnlineStatus(userId, true);
-    });
-
-    socket.on("user_offline", (userId: string) => {
-      get().updateOnlineStatus(userId, false);
-    });
-
-    socket.on("system_offline_for_conversation", (conversationId: string) => {
-      Console.log("System offline for conversation:", conversationId);
-      set((state) => {
-        const newOnlineUsers = new Set(state.onlineUsers);
-        newOnlineUsers.delete("system");
-        return { onlineUsers: newOnlineUsers };
-      });
-    });
-
-    socket.on("user_typing", (data: { id: string; conversationId: string }) => {
-      if (data.id === "system") {
-        get().setAIResponding(true);
-        get().startTyping("system");
-      } else {
-        get().startTyping(data.id);
-      }
-    });
-
-    socket.on(
-      "user_stopped_typing",
-      (data: { id: string; conversationId: string }) => {
-        if (data.id === "system") {
-          get().setAIResponding(false);
-          get().stopTyping("system");
-        } else {
-          get().stopTyping(data.id);
-        }
-      },
-    );
-
-    socket.on("receive_message", (message: Message) => {
-      get().receiveMessage(message);
-
-      // If message is from system, AI is done responding
-      if (message.senderId === "system") {
-        get().setAIResponding(false);
-      }
-    });
-
-    socket.on("conversation_closed", (conversationId: string) => {
-      Console.log("Conversation closed:", conversationId);
-      set({ conversationClosed: true, isAIResponding: false });
-    });
   },
 
   setRole: (role) => {

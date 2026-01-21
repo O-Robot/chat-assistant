@@ -38,8 +38,12 @@ import {
 import { ConfirmationModal } from "../shared/ConfirmationModal";
 import { useRouter } from "next/navigation";
 import { sanitizedContent } from "@/lib/constants";
+import { useSocketConnection } from "@/hooks/useSocketConnection";
+import { ReconnectionIndicator } from "../shared/ReconnectionIndicator";
 
 export const ChatWindow = ({ onClose }: any) => {
+  useSocketConnection();
+
   const {
     user,
     setUser,
@@ -543,6 +547,8 @@ export const ChatWindow = ({ onClose }: any) => {
 
   return (
     <div className="fixed bottom-6 right-6 z-50 w-95 h-150 bg-background rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+      <ReconnectionIndicator />
+
       {/* Header */}
       <div className="flex justify-between items-center p-4 border-b border-gray-200 bg-primary">
         <div className="flex items-center gap-3">
