@@ -188,35 +188,47 @@ export async function exportUserTranscript(conversation, recipientEmail, res) {
   let pdfPath = null;
 
   try {
-    const pdfHtml = buildConversationHtml(conversation);
-    const pdfPath = await generateConversationPdf(pdfHtml);
+    // 1. Ensure conversation data exists
+    if (!conversation || conversation.length === 0) {
+      throw new Error("No conversation data provided for PDF generation");
+    }
 
+    // 2. Build and sanitize HTML
+    const pdfHtml = buildConversationHtml(conversation);
+
+    // 3. GENERATE PDF - Assign to the outer variable (remove 'const')
+    pdfPath = await generateConversationPdf(pdfHtml);
+
+    // 4. Read the file
     const pdfBuffer = await fs.readFile(pdfPath);
 
     const emailHtml = exportSingleConversationTemplate({
-      firstName: conversation[0].firstName,
-      lastName: conversation[0].lastName,
+      firstName: conversation[0].firstName || "User",
+      lastName: conversation[0].lastName || "",
     });
 
     const result = await sendEmailWithAttachment({
       to: recipientEmail,
-      subject: "Your Chat Transcript with Ogooluwani",
+      subject: "Your Chat Transcript",
       html: emailHtml,
       attachmentData: pdfBuffer,
     });
+
     if (!result.success) throw new Error(result.error);
 
-    res.json({ success: true, message: "Chat Transcript has been Sent " });
+    res.json({ success: true, message: "Chat Transcript has been Sent" });
   } catch (error) {
-    console.error("Send Error:", error);
-    res.status(500).json({ error: "Failed to export conversation" });
+    console.error("Detailed Send Error:", error); // This will now show the actual sub-error
+    res
+      .status(500)
+      .json({ error: error.message || "Failed to export conversation" });
   } finally {
+    // This now correctly sees the path because we removed 'const' above
     if (pdfPath) {
       try {
         await fs.unlink(pdfPath);
-        console.log(`Successfully deleted temp file: ${pdfPath}`);
       } catch (cleanupError) {
-        console.error("Failed to delete temp file:", cleanupError);
+        console.error("Cleanup Error:", cleanupError);
       }
     }
   }

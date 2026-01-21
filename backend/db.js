@@ -25,7 +25,7 @@ export async function openDB() {
     CREATE TABLE IF NOT EXISTS conversations (
       id TEXT PRIMARY KEY,
       userId TEXT,
-      status TEXT DEFAULT 'open', -- open / closed / resolved
+      status TEXT DEFAULT 'open', -- open / closed / transferred / resolved
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
       closedAt DATETIME,
       FOREIGN KEY (userId) REFERENCES users(id)

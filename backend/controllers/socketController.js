@@ -3,14 +3,15 @@ import {
   sendWelcomeMessage,
   sendConversationClosedMessage,
   sendSystemMessage,
-  sendAdminJoinedMessage,
 } from "../utils/systemMessages.js";
-import { generateAIResponse } from "../controllers/aiController.js";
+import { handleAIResponse } from "../controllers/aiController.js";
 import { notifyAdminNewChat } from "../utils/email/email.js";
+import { sanitizeHTML } from "../utils/sanitize.js";
 
 const onlineUsers = new Map();
 const userSockets = new Map();
 const conversationAdminStatus = new Map();
+const pendingTransferRequests = new Map();
 
 export function handleSocketConnection(io, socket) {
   console.log(`Socket connected: ${socket.id}`);
@@ -25,20 +26,16 @@ export function handleSocketConnection(io, socket) {
         return;
       }
 
-      // Store user data
       userSockets.set(socket.id, { ...userData, socketId: socket.id });
       onlineUsers.set(id, socket.id);
 
       console.log(`User ${firstName} ${lastName} (${role}) joined - ${id}`);
 
-      // Join user's own room
       socket.join(`user-${id}`);
 
-      // If visitor, get their conversation and join that room
       if (role === "visitor") {
         const db = await openDB();
 
-        // Close any existing open conversations for this user FIRST
         await db.run(
           `UPDATE conversations 
            SET status = 'closed', closedAt = CURRENT_TIMESTAMP 
@@ -50,7 +47,6 @@ export function handleSocketConnection(io, socket) {
           [id, id],
         );
 
-        // Get the single open conversation
         const conversation = await db.get(
           "SELECT * FROM conversations WHERE userId = ? AND status = 'open' ORDER BY createdAt DESC LIMIT 1",
           [id],
@@ -59,13 +55,11 @@ export function handleSocketConnection(io, socket) {
         if (conversation) {
           socket.join(`conversation-${conversation.id}`);
 
-          // Check if this is a new conversation
           const messageCount = await db.get(
             "SELECT COUNT(*) as count FROM messages WHERE conversationId = ?",
             [conversation.id],
           );
 
-          // Send welcome message for new conversations (only if not taken by admin)
           if (
             messageCount.count === 0 &&
             !conversationAdminStatus.get(conversation.id)
@@ -75,7 +69,6 @@ export function handleSocketConnection(io, socket) {
         }
       }
 
-      // If admin, join all active conversations
       if (role === "admin") {
         const db = await openDB();
         const conversations = await db.all(
@@ -87,21 +80,17 @@ export function handleSocketConnection(io, socket) {
         });
       }
 
-      // Broadcast online status to EVERYONE
       io.emit("user_online", id);
 
       if (role === "admin") {
         io.emit("user_online", "admin");
       }
 
-      // System is always online initially
       io.emit("user_online", "system");
 
-      // Send list of ALL online users to this socket
       const onlineUserIds = Array.from(onlineUsers.keys());
       socket.emit("users_online", onlineUserIds);
 
-      // Also broadcast to everyone else
       io.emit("users_online", onlineUserIds);
     } catch (error) {
       console.error("Error in user_join:", error);
@@ -118,6 +107,13 @@ export function handleSocketConnection(io, socket) {
         return;
       }
 
+      const sanitizedContent = sanitizeHTML(content);
+
+      if (!sanitizedContent) {
+        console.error("Empty content after sanitization");
+        return;
+      }
+
       const db = await openDB();
 
       const conversation = await db.get(
@@ -130,14 +126,17 @@ export function handleSocketConnection(io, socket) {
         return;
       }
 
-      // Save message to database
+      // Check if admin is handling
+      const isAdminHandled = conversationAdminStatus.get(conversationId);
+
+      // Save message
       await db.run(
         "INSERT INTO messages (id, conversationId, senderId, content, timestamp) VALUES (?, ?, ?, ?, ?)",
         [
           id,
           conversationId,
           senderId,
-          content,
+          sanitizedContent,
           new Date(timestamp).toISOString(),
         ],
       );
@@ -164,14 +163,22 @@ export function handleSocketConnection(io, socket) {
         sender = await db.get("SELECT * FROM users WHERE id = ?", [senderId]);
       }
 
-      const messageWithSender = { ...message, sender };
-
+      const messageWithSender = {
+        ...message,
+        content: sanitizedContent,
+        sender,
+      };
       io.emit("receive_message", messageWithSender);
 
-      const isAdminHandled = conversationAdminStatus.get(conversationId);
-
+      // ADMIN JOINS - Switch from AI to Human
       if (senderId === "admin" && !isAdminHandled) {
+        await db.run(
+          "UPDATE conversations SET status = 'transferred' WHERE id = ?",
+          [conversationId],
+        );
+
         conversationAdminStatus.set(conversationId, true);
+        pendingTransferRequests.delete(conversationId);
 
         io.emit("system_offline_for_conversation", conversationId);
 
@@ -179,97 +186,93 @@ export function handleSocketConnection(io, socket) {
           await sendSystemMessage(
             io,
             conversationId,
-            "You've been connected. An agent is now assisting you.",
+            "You've been connected to Ogooluwani. He's now assisting you personally.",
           );
-          await sendAdminJoinedMessage(io, conversationId, sender.firstName);
         }, 500);
+
         return;
       }
 
+      // If admin is handling, skip AI logic
       if (isAdminHandled) {
-        console.log(
-          `Admin is handling conversation ${conversationId}. System ignoring triggers.`,
-        );
+        console.log(`Admin handling conversation ${conversationId}`);
         return;
       }
 
-      const lowerContent = content.toLowerCase();
-      const triggers = ["transfer", "live agent", "talk to ogo", "human"];
-      if (
-        triggers.some((t) => lowerContent.includes(t)) &&
-        senderId !== "system"
-      ) {
-        setTimeout(async () => {
-          await sendSystemMessage(
-            io,
-            conversationId,
-            "Would you like to be transferred to a live agent? Please reply with 'yes' or 'no'.",
+      // Handle transfer confirmation
+      const lowerContent = sanitizedContent.toLowerCase().trim();
+
+      // user approves transfer
+      if (pendingTransferRequests.has(conversationId)) {
+        if (lowerContent === "yes" || lowerContent === "y") {
+          await db.run(
+            "UPDATE conversations SET status = 'transferred' WHERE id = ?",
+            [conversationId],
           );
-        }, 500);
-        return;
-      }
 
-      if (
-        (lowerContent === "yes" || lowerContent === "no") &&
-        senderId !== "system"
-      ) {
-        const recent = await db.all(
-          `SELECT * FROM messages WHERE conversationId = ? ORDER BY timestamp DESC LIMIT 3`,
-          [conversationId],
-        );
-        const isConfirming = recent.some(
-          (m) =>
-            m.senderId === "system" &&
-            m.content.includes("transferred to a live agent"),
-        );
+          conversationAdminStatus.set(conversationId, true);
+          pendingTransferRequests.delete(conversationId);
 
-        if (isConfirming) {
-          if (lowerContent === "yes") {
-            conversationAdminStatus.set(conversationId, true);
-            io.emit("system_offline_for_conversation", conversationId);
+          io.emit("system_offline_for_conversation", conversationId);
 
-            setTimeout(async () => {
-              await sendSystemMessage(
-                io,
-                conversationId,
-                "You've been connected to our support team. An agent will be with you shortly.",
-              );
-
-              const user = await db.get("SELECT * FROM users WHERE id = ?", [
-                senderId,
-              ]);
-              if (user) {
-                notifyAdminNewChat(
-                  `${user.firstName} ${user.lastName}`,
-                  user.phone,
-                  user.email,
-                ).catch((err) => console.error("Email notify error:", err));
-              }
-            }, 500);
-          } else {
+          setTimeout(async () => {
             await sendSystemMessage(
               io,
               conversationId,
-              "No problem! I'm here to help. What can I assist you with?",
+              "Perfect! I'm connecting you to Ogooluwani now. He'll be with you shortly.",
             );
-          }
+
+            const user = await db.get("SELECT * FROM users WHERE id = ?", [
+              senderId,
+            ]);
+            if (user) {
+              notifyAdminNewChat(
+                `${user.firstName} ${user.lastName}`,
+                user.phone,
+                user.email,
+              ).catch((err) => console.error("Email notify error:", err));
+            }
+          }, 500);
+
+          return;
+        } else if (lowerContent === "no" || lowerContent === "n") {
+          pendingTransferRequests.delete(conversationId);
+          await sendSystemMessage(
+            io,
+            conversationId,
+            "No problem! I'm here to help. What else can I assist you with?",
+          );
           return;
         }
+        // If not yes/no, continue normally
       }
 
-      if (senderId !== "system" && senderId !== "admin" && !isAdminHandled) {
+      if (senderId !== "system" && senderId !== "admin") {
+        const sanitizedMessage = {
+          ...message,
+          content: sanitizedContent,
+        };
         setTimeout(async () => {
-          const aiResponse = await generateAIResponse(
-            content,
-            conversationId,
-            db,
-          );
-          if (aiResponse)
-            await sendSystemMessage(io, conversationId, aiResponse);
-        }, 1000);
+          await handleAIResponse(io, sanitizedMessage);
+        }, 800);
       }
     } catch (error) {
       console.error("Error in send_message:", error);
+    }
+  });
+
+  //transfer request from ai
+  socket.on("transfer_request", async ({ conversationId }) => {
+    try {
+      pendingTransferRequests.set(conversationId, true);
+
+      await sendSystemMessage(
+        io,
+        conversationId,
+        "I'll need Ogooluwani to handle that personally. Would you like me to transfer you to him? Please reply 'yes' to connect with him.",
+      );
+    } catch (error) {
+      console.error("Error handling transfer request:", error);
     }
   });
 
@@ -293,19 +296,15 @@ export function handleSocketConnection(io, socket) {
     try {
       const db = await openDB();
 
-      // Update conversation status
       await db.run(
         "UPDATE conversations SET status = 'closed', closedAt = CURRENT_TIMESTAMP WHERE id = ?",
         [conversationId],
       );
 
-      // Remove admin status
       conversationAdminStatus.delete(conversationId);
+      pendingTransferRequests.delete(conversationId);
 
-      // Send system message about conversation closing
       await sendConversationClosedMessage(io, conversationId);
-
-      // Broadcast to EVERYONE that conversation is closed
       io.emit("conversation_closed", conversationId);
 
       console.log(`Conversation closed: ${conversationId}`);
@@ -341,4 +340,8 @@ export function handleSocketConnection(io, socket) {
 
     console.log(`Socket disconnected: ${socket.id}`);
   });
+}
+
+export function setPendingTransfer(conversationId, value) {
+  pendingTransferRequests.set(conversationId, value);
 }
