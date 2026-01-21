@@ -1,5 +1,6 @@
 import Cookies from "js-cookie";
-import { Status, User, UserRole, Visitor } from "@/types";
+import { Status, User, UserRole } from "@/types";
+import { Console } from "./constants";
 
 const USER_COOKIE_KEY = "chat_user";
 const CONVERSATION_COOKIE_KEY = "chat_conversation";
@@ -24,9 +25,9 @@ export const setUserCookie = (user: User): void => {
       secure: process.env.NODE_ENV === "production",
     });
 
-    console.log("User cookie set with validated data:", validatedUser);
+    Console.log("User cookie set with validated data:", validatedUser);
   } catch (error) {
-    console.error("Error setting user cookie:", error);
+    Console.error("Error setting user cookie:", error);
   }
 };
 
@@ -38,7 +39,7 @@ export const getUserCookie = (): User | null => {
     const user: User = JSON.parse(cookie);
 
     if (!user.id || !user.email || !user.role) {
-      console.warn("Invalid user cookie data, removing...");
+      Console.warn("Invalid user cookie data, removing...");
       removeUserCookie();
       return null;
     }
@@ -54,7 +55,7 @@ export const getUserCookie = (): User | null => {
       role: user.role || UserRole.VISITOR,
     };
   } catch (error) {
-    console.error("Error reading user cookie:", error);
+    Console.error("Error reading user cookie:", error);
     removeUserCookie();
     return null;
   }
