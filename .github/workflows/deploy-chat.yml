@@ -18,23 +18,25 @@ jobs:
               with:
                   node-version: "22"
 
-            #
-            - name: Build frontend
+            - name: Install dependencies & build frontend
               run: |
-                  cd frontend
                   npm ci
-                  npm run build
-                  cd ..
+                  npm run build --workspace frontend
 
-            - name: Archive frontend
+            - name: Archive frontend build
               run: |
-                  tar czf chat_frontend_build.tar.gz frontend/.next frontend/package.json frontend/package-lock.json frontend/node_modules frontend/public
+                  tar czf chat_frontend_build.tar.gz \
+                  frontend/.next \
+                  frontend/package.json \
+                  frontend/public
 
             - name: Archive backend
               run: |
-                  tar czf chat_backend_build.tar.gz backend package.json package-lock.json backend/node_modules
+                  tar czf chat_backend_build.tar.gz \
+                  backend \
+                  backend/package.json
 
-            - name: Deploy builds to server
+            - name: Upload build to server
               uses: appleboy/scp-action@v0.1.5
               with:
                   host: ${{ secrets.SSH_HOST }}
@@ -44,7 +46,7 @@ jobs:
                   source: "chat_frontend_build.tar.gz,chat_backend_build.tar.gz"
                   target: "~/chat-system/"
 
-            - name: Extract & restart services
+            - name: Extract builds & reload PM2
               uses: appleboy/ssh-action@v1
               with:
                   host: ${{ secrets.SSH_HOST }}
@@ -55,29 +57,11 @@ jobs:
                       set -e
                       cd ~/chat-system
 
-                      # --- Frontend ---
-                      if [ -d "frontend/.next" ]; then
-                        mv frontend/.next frontend/.next_backup_$(date +%s)
-                      fi
+                      # Extract frontend
                       tar xzf chat_frontend_build.tar.gz
-
-                      # --- Backend ---
-                      if [ -d "backend/node_modules" ]; then
-                        mv backend/node_modules backend/node_modules_backup_$(date +%s)
-                      fi
+                      # Extract backend
                       tar xzf chat_backend_build.tar.gz
 
-                      # Install production deps (optional if node_modules included)
-                      cd frontend && npm install --production && cd ..
-                      cd backend && npm install --production && cd ..
-
-                      # Reload PM2
-                      pm2 reload ecosystem.config.js --env production
+                      # Reload PM2 processes
+                      pm2 reload ecosystem.config.js 
                       pm2 save
-
-                      # Cleanup old builds
-                      rm -rf frontend/.next_backup_* backend/node_modules_backup_*
-
-                      # Optional: health checks
-                      # curl -f https://chat.ogooluwaniadewale.com || echo "Frontend failed"
-                      # curl -f https://api.ogooluwaniadewale.com || echo "Backend failed"
