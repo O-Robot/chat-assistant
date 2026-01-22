@@ -10,23 +10,15 @@ jobs:
         runs-on: ubuntu-latest
 
         steps:
-            # Checkout repository
             - name: Checkout repo
               uses: actions/checkout@v3
 
-            # Setup Node for CI validation
             - name: Setup Node.js
               uses: actions/setup-node@v3
               with:
                   node-version: "22"
 
-            # Install once in CI to ensure lockfile is valid
-            - name: Install dependencies (CI sanity check)
-              run: |
-                  npm ci
-
-            # Archive source only, no build in CI
-            - name: Archive source code
+            - name: Archive source
               run: |
                   tar czf chat_source.tar.gz \
                   frontend \
@@ -34,7 +26,6 @@ jobs:
                   package.json \
                   package-lock.json
 
-            # Upload source to server
             - name: Upload source to server
               uses: appleboy/scp-action@v0.1.5
               with:
@@ -45,7 +36,6 @@ jobs:
                   source: "chat_source.tar.gz"
                   target: "~/chat-system/"
 
-            # Build on server using server env
             - name: Build on server & reload PM2
               uses: appleboy/ssh-action@v1
               with:
@@ -57,7 +47,7 @@ jobs:
                       set -e
                       cd ~/chat-system
 
-                      # Backup current frontend build if it exists
+                      # Backup current release
                       if [ -d "frontend/.next" ]; then
                         mv frontend/.next frontend/.next_backup_$(date +%s)
                       fi
@@ -65,22 +55,20 @@ jobs:
                       # Extract new source
                       tar xzf chat_source.tar.gz
 
-                      # If node_modules does not exist, install deps
-                      if [ ! -d "node_modules" ]; then
-                        echo "node_modules not found, installing dependencies"
-                        npm ci
-                      else
-                        echo "node_modules exists, skipping install"
-                      fi
+                      # Install 
+                      npm ci
 
                       # Build frontend on the server using server .env.production
-                      cd frontend
-                      npm run build
+                      npm run build --workspace frontend
+
+                      # Install backend production deps
+                      cd backend
+                      npm install --production
                       cd ..
 
                       # Reload PM2
                       pm2 reload ecosystem.config.js
                       pm2 save
 
-                      # Cleanup old backups if everything succeeded
+                      # Cleanup backups
                       rm -rf frontend/.next_backup_*
