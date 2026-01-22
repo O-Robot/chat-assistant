@@ -12,10 +12,10 @@ router.get("/users", async (req, res) => {
   try {
     const db = await openDB();
     const users = await db.all("SELECT * FROM users ORDER BY createdAt DESC");
-    res.json(users);
+    res.json(users || []);
   } catch (error) {
     console.error("Error fetching users:", error);
-    res.status(500).json({ error: "Failed to fetch users" });
+    res.status(500).json({ error: error || "Failed to fetch users" });
   }
 });
 
@@ -26,6 +26,29 @@ router.put("/users/:id", async (req, res) => {
     const { firstName, lastName, email, phone, country } = req.body;
 
     const db = await openDB();
+
+    if (!id) {
+      return res.status(400).json({ message: "User id is required" });
+    }
+
+    if (
+      !firstName?.trim() ||
+      !lastName?.trim() ||
+      !email?.trim() ||
+      !phone?.trim() ||
+      !country?.trim()
+    ) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
+
+    const existingUser = await db.get("SELECT id FROM users WHERE id = ?", [
+      id,
+    ]);
+
+    if (!existingUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
     await db.run(
       `UPDATE users 
        SET firstName = ?, lastName = ?, email = ?, phone = ?, country = ? 
@@ -37,18 +60,39 @@ router.put("/users/:id", async (req, res) => {
     res.json(updatedUser);
   } catch (error) {
     console.error("Error updating user:", error);
-    res.status(500).json({ error: "Failed to update user" });
+    res.status(500).json({ error: error || "Failed to update user" });
   }
 });
 
 // Get conversations for a user
 router.get("/conversations/:userId", async (req, res) => {
   try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ message: "User id is required" });
+    }
+
     const db = await openDB();
+
+    const userExists = await db.get("SELECT id FROM users WHERE id = ?", [
+      userId,
+    ]);
+
+    if (!userExists) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
     const conversations = await db.all(
-      "SELECT * FROM conversations WHERE userId = ? ORDER BY createdAt ASC",
-      [req.params.userId],
+      `SELECT * FROM conversations 
+       WHERE userId = ? 
+       ORDER BY createdAt ASC`,
+      [userId],
     );
+
+    if (!conversations || conversations.length === 0) {
+      return res.json([]);
+    }
 
     const conversationsWithMessages = await Promise.all(
       conversations.map(async (conv) => {
@@ -70,7 +114,12 @@ router.get("/conversations/:userId", async (req, res) => {
               msg.senderId === "system"
                 ? { id: "system", firstName: "System", lastName: "", email: "" }
                 : msg.senderId === "admin"
-                  ? { id: "admin", firstName: "Admin", lastName: "", email: "" }
+                  ? {
+                      id: "admin",
+                      firstName: "Ogooluwani",
+                      lastName: "",
+                      email: "",
+                    }
                   : {
                       id: msg.senderId,
                       firstName: msg.firstName,
@@ -85,7 +134,7 @@ router.get("/conversations/:userId", async (req, res) => {
     res.json(conversationsWithMessages);
   } catch (error) {
     console.error("Error fetching conversations:", error);
-    res.status(500).json({ error: "Failed to fetch conversations" });
+    res.status(500).json({ error: error || "Failed to fetch conversations" });
   }
 });
 

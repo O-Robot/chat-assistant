@@ -281,7 +281,7 @@ export default function AdminPage() {
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       setFilteredUsers(
-        users.filter(
+        users?.filter(
           (u) =>
             `${u.firstName} ${u.lastName}`.toLowerCase().includes(query) ||
             u.email.toLowerCase().includes(query),
@@ -516,7 +516,7 @@ export default function AdminPage() {
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto bg-background ">
-            {filteredUsers.map((u) => (
+            {filteredUsers?.map((u) => (
               <div
                 key={u.id}
                 onClick={() => {
