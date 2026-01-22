@@ -40,7 +40,13 @@ router.post("/login", async (req, res) => {
 
 // Logout
 router.post("/logout", (req, res) => {
-  res.clearCookie("whoami");
+  res.clearCookie("whoami", {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "strict" : "lax",
+    path: "/",
+    domain: isProduction ? ".ogooluwaniadewale.com" : undefined,
+  });
   res.json({ success: true, message: "Logged out" });
 });
 

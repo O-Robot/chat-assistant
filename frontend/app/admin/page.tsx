@@ -441,6 +441,7 @@ export default function AdminPage() {
   const handleLogout = async () => {
     try {
       await adminApi.post("/auth/admin/logout");
+      
       router.push("/admin/auth");
     } catch (err) {
       Console.error(err);
