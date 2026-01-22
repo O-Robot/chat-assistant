@@ -4,31 +4,36 @@ import { loginAdmin, authenticateAdmin } from "../middleware/adminAuth.js";
 const router = express.Router();
 const isProduction = process.env.NODE_ENV === "production";
 
-router.post("/login", (req, res) => {
+router.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({ message: "Email and password required" });
   }
 
-  const result = loginAdmin(email, password);
+  try {
+    const result = await loginAdmin(email, password);
 
-  if (result.success) {
-    res.cookie("whoami", result.token, {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: "lax",
-      path: "/",
-    });
+    if (result.success) {
+      res.cookie("whoami", result.token, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: "lax",
+        path: "/",
+      });
 
-    return res.json({
-      success: true,
-      message: "Login successful",
-      token: result.token,
-    });
+      return res.json({
+        success: true,
+        message: "Login successful",
+        token: result.token,
+      });
+    }
+
+    return res.status(401).json({ message: "Invalid credentials" });
+  } catch (error) {
+    console.error("Login error:", error);
+    return res.status(500).json({ message: "Internal server error" });
   }
-
-  return res.status(401).json({ message: "Invalid credentials" });
 });
 
 // Logout

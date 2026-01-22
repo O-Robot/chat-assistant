@@ -1,9 +1,9 @@
 import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
 
-const JWT_SECRET =
-  process.env.JWT_SECRET || "your-super-secret-jwt-key-change-in-production";
+const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-jwt-key";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@example.com";
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123"; // Change this!
+const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH; // Change this!
 
 export function authenticateAdmin(req, res, next) {
   const token =
@@ -25,8 +25,13 @@ export function authenticateAdmin(req, res, next) {
   }
 }
 
-export function loginAdmin(email, password) {
-  if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+export async function loginAdmin(email, password) {
+  if (email !== ADMIN_EMAIL) {
+    return { success: false, error: "Failed" };
+  }
+  const isMatch = await bcrypt.compareSync(password, ADMIN_PASSWORD_HASH);
+
+  if (isMatch) {
     const token = jwt.sign(
       {
         id: "admin",
@@ -40,5 +45,7 @@ export function loginAdmin(email, password) {
     );
     return { success: true, token };
   }
-  return { success: false };
+  return { success: false, error };
 }
+
+// node -e "console.log(require('bcrypt').hashSync('admin123', 12))"
