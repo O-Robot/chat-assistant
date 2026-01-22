@@ -18,8 +18,10 @@ router.post("/login", async (req, res) => {
       res.cookie("whoami", result.token, {
         httpOnly: true,
         secure: isProduction,
-        sameSite: "lax",
+        sameSite: isProduction ? "strict" : "lax",
         path: "/",
+        domain: isProduction ? ".ogooluwaniadewale.com" : undefined,
+        maxAge: 2 * 24 * 60 * 60 * 1000,
       });
 
       return res.json({
