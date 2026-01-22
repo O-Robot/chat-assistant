@@ -14,8 +14,8 @@ export default function AdminAuthPage() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [form, setForm] = useState({
-    email: "ogooluwaniadewale@gmail.com",
-    password: "admin123",
+    email: "",
+    password: "",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
