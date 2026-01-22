@@ -630,17 +630,18 @@ export function FullChatWindow({
 
         {/* Menu */}
         <div className="flex">
-          <button
-            onClick={() =>
-              router.push(
-                process.env.NEXT_PUBLIC_PORTFOLIO_URL ||
-                  "http://localhost:3000/widget",
-              )
-            }
-            className="p-2 text-primary-text rounded-lg hover:bg-white/20 transition-colors cursor-pointer"
-          >
-            <Minimize size={18} />
-          </button>
+          {process.env.NEXT_PUBLIC_PORTFOLIO_URL && (
+            <button
+              onClick={() =>
+                router.push(
+                  process.env.NEXT_PUBLIC_PORTFOLIO_URL + "/home" || "",
+                )
+              }
+              className="p-2 text-primary-text rounded-lg hover:bg-white/20 transition-colors cursor-pointer"
+            >
+              <Minimize size={18} />
+            </button>
+          )}
           <DarkModeToggle />
           <Menu as="div" className="relative">
             <MenuButton className="p-2 text-primary-text cursor-pointer rounded-lg">

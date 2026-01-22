@@ -461,7 +461,7 @@ export const ChatWindow = ({ onClose }: any) => {
   // Form for new user
   if (!user?.email) {
     return (
-      <div className="fixed bottom-6 right-6 z-50 w-95 h-150 bg-background rounded-2xl shadow-2xl flex flex-col overflow-hidden border-0">
+      <div className="fixed bottom-6 right-6 z-50 w-95 h-150 bg-background rounded-2xl  flex flex-col overflow-hidden border-0">
         <div className="flex justify-between items-center p-4 border-b border-gray-200 bg-primary">
           <h2 className="text-lg font-semibold text-white">
             Let's get to know you 👋
@@ -584,11 +584,15 @@ export const ChatWindow = ({ onClose }: any) => {
 
         <div className="flex gap-1">
           <button
-            onClick={() =>
-              router.push(
-                process.env.NEXT_PUBLIC_CHAT_URL || "http://localhost:3000",
-              )
-            }
+            onClick={() => {
+              const targetUrl =
+                process.env.NEXT_PUBLIC_CHAT_URL || "http://localhost:3000";
+              if (window.parent !== window) {
+                window.parent.location.href = targetUrl;
+              } else {
+                window.location.href = targetUrl;
+              }
+            }}
             className="p-2 text-white rounded-lg hover:bg-white/20 transition-colors cursor-pointer"
           >
             <Maximize size={18} />
@@ -695,14 +699,14 @@ export const ChatWindow = ({ onClose }: any) => {
                         : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-600"
                     }`}
                   >
-                    <p className="text-sm whitespace-pre-wrap wrap-break-word">
+                    <div className="text-sm whitespace-pre-wrap wrap-break-word">
                       <div
                         className="chat-content"
                         dangerouslySetInnerHTML={{
                           __html: sanitizedContent(msg.content),
                         }}
                       />
-                    </p>
+                    </div>
                     <span className="text-[10px] opacity-70 mt-1 block">
                       {new Date(msg.timestamp).toLocaleTimeString("en-GB", {
                         hour: "2-digit",

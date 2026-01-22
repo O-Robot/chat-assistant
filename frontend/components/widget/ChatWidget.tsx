@@ -35,7 +35,6 @@ export function ChatWidget() {
           status: Status.ONLINE,
         });
 
-        // Load messages from localStorage if conversation exists
         if (conversationId) {
           loadMessagesFromLocalStorage(conversationId);
         }
@@ -54,7 +53,6 @@ export function ChatWidget() {
     }
   }, [isInitialized, initializeSocketListeners]);
 
-  // Handle chat focus state
   useEffect(() => {
     setIsChatFocused(isOpen);
 
@@ -63,15 +61,22 @@ export function ChatWidget() {
     }
   }, [isOpen, setIsChatFocused, resetUnreadCount]);
 
+  useEffect(() => {
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: "CHAT_STATE_CHANGED", isOpen }, "*");
+    }
+  }, [isOpen]);
+
   return (
     <>
       {isOpen && <ChatWindow onClose={() => setIsOpen(false)} />}
 
       <button
         onClick={() => setIsOpen(true)}
-        className={`fixed bottom-6 right-6 z-50 flex items-center justify-center w-14 h-14 rounded-full shadow-lg transition-all duration-300 ease-in-out transform hover:scale-110 bg-primary cursor-pointer ${
+        className={`fixed bottom-0 md:bottom-3 right-3 z-50 flex items-center justify-center w-14 h-14 rounded-full transition-all duration-300 ease-in-out transform hover:scale-90 bg-primary cursor-pointer ${
           isOpen ? "scale-0" : "scale-100"
         }`}
+        aria-label="Open chat"
       >
         {user ? (
           <div className="relative">
@@ -102,7 +107,7 @@ export function ChatWidget() {
       {!isOpen && unreadCount === 0 && (
         <div
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-24 right-6 z-50 max-w-xs bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transform transition-all duration-300 ease-in-out animate-fade-in cursor-pointer hover:scale-105"
+          className="fixed bottom-18 md:bottom-21 right-3 z-50 max-w-xs bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transform transition-all duration-300 ease-in-out animate-fade-in cursor-pointer "
         >
           <p className="text-sm text-gray-800 dark:text-white">
             Hi {user?.firstName || "there"}! 👋 How can I help you today?
