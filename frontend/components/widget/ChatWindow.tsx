@@ -546,7 +546,7 @@ export const ChatWindow = ({ onClose }: any) => {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 w-95 h-150 bg-background rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+    <div className="fixed bottom-6 right-6 z-50 w-95 h-150 bg-background rounded-2xl shadow-xl shadow-primary/30 flex flex-col overflow-hidden">
       <ReconnectionIndicator />
 
       {/* Header */}
