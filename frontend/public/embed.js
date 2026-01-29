@@ -16,9 +16,7 @@
       transition: all 0.3s ease;
     `;
 
-    // container.style.backgroundColor = "red";
-    const widgetUrl =
-      scriptTag?.dataset.widgetUrl || 'http://localhost:3000';
+    const widgetUrl = scriptTag?.dataset.widgetUrl || "http://localhost:3000";
     console.log(widgetUrl);
     const iframe = document.createElement("iframe");
     iframe.src = `${widgetUrl}/widget`;
@@ -32,7 +30,27 @@
     container.appendChild(iframe);
     document.body.appendChild(container);
 
+    const sendTheme = () => {
+      const isDark = document.documentElement.classList.contains("dark");
+      const theme = isDark ? "light" : "dark";
+
+      if (iframe.contentWindow) {
+        iframe.contentWindow.postMessage({ type: "THEME_UPDATE", theme }, "*");
+      }
+    };
+
+    iframe.addEventListener("load", sendTheme);
+
+    const observer = new MutationObserver(sendTheme);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+
     window.addEventListener("message", (event) => {
+      if (event.data.type === "WIDGET_READY") {
+        sendTheme();
+      }
       if (event.data.type === "CHAT_STATE_CHANGED") {
         if (event.data.isOpen) {
           container.style.width = "420px";
@@ -44,5 +62,10 @@
       }
     });
   }
-  createWidget();
+
+  if (document.readyState === "complete") {
+    createWidget();
+  } else {
+    window.addEventListener("load", createWidget);
+  }
 })();

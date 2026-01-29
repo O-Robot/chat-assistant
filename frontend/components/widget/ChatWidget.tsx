@@ -67,6 +67,19 @@ export function ChatWidget() {
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === "THEME_UPDATE") {
+        const isDark = event.data.theme === "dark";
+        document.documentElement.classList.toggle("dark", isDark);
+      }
+    };
+    window.addEventListener("message", handler);
+    window.parent.postMessage({ type: "WIDGET_READY" }, "*");
+
+    return () => window.removeEventListener("message", handler);
+  }, []);
+
   return (
     <>
       {isOpen && <ChatWindow onClose={() => setIsOpen(false)} />}
@@ -78,7 +91,7 @@ export function ChatWidget() {
         }`}
         aria-label="Open chat"
       >
-        {user ? (
+        {user && user.email ? (
           <div className="relative">
             <Avatar user={user} />
             {unreadCount > 0 && (

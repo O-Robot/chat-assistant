@@ -4,7 +4,7 @@ export function useDarkMode() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [mounted, setMounted] = useState(false);
 
-  // After mounting, we have access to window
+
   useEffect(() => {
     
     const savedMode = localStorage.getItem('darkMode');

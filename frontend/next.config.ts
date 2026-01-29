@@ -29,7 +29,7 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Access-Control-Allow-Origin",
-            value: "*",
+            value: "https://ogooluwaniadewale.com",
           },
           {
             key: "Content-Type",
