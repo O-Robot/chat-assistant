@@ -16,7 +16,8 @@
     `;
 
     // container.style.backgroundColor = "red";
-    const widgetUrl = window.CHAT_WIDGET_URL || "http://localhost:3000";
+    const widgetUrl =
+      scriptTag?.dataset.widgetUrl || process.env.NEXT_PUBLIC_CHAT_URL;
     console.log(widgetUrl);
     const iframe = document.createElement("iframe");
     iframe.src = `${widgetUrl}/widget`;
