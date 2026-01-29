@@ -18,7 +18,7 @@
 
     // container.style.backgroundColor = "red";
     const widgetUrl =
-      scriptTag?.dataset.widgetUrl || process.env.NEXT_PUBLIC_CHAT_URL;
+      scriptTag?.dataset.widgetUrl || 'http://localhost:3000';
     console.log(widgetUrl);
     const iframe = document.createElement("iframe");
     iframe.src = `${widgetUrl}/widget`;
