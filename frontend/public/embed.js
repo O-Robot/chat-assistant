@@ -2,6 +2,7 @@
   const CONTAINER_ID = "ogooluwani-chat-widget";
 
   function createWidget() {
+    const scriptTag = document.currentScript;
     const container = document.createElement("div");
     container.id = CONTAINER_ID;
     container.style.cssText = `
