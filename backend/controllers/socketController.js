@@ -168,8 +168,10 @@ export function handleSocketConnection(io, socket) {
         content: sanitizedContent,
         sender,
       };
-      io.emit("receive_message", messageWithSender);
-
+      io.to(`conversation-${conversationId}`).emit(
+        "receive_message",
+        messageWithSender,
+      );
       // ADMIN JOINS - Switch from AI to Human
       if (senderId === "admin" && !isAdminHandled) {
         await db.run(
@@ -179,8 +181,10 @@ export function handleSocketConnection(io, socket) {
 
         conversationAdminStatus.set(conversationId, true);
         pendingTransferRequests.delete(conversationId);
-
-        io.emit("system_offline_for_conversation", conversationId);
+        io.to(`conversation-${conversationId}`).emit(
+          "system_offline_for_conversation",
+          conversationId,
+        );
 
         setTimeout(async () => {
           await sendSystemMessage(
@@ -280,15 +284,19 @@ export function handleSocketConnection(io, socket) {
   socket.on("typing_start", (conversationId) => {
     const userData = userSockets.get(socket.id);
     if (!userData || !conversationId) return;
-
-    io.emit("user_typing", { id: userData.id, conversationId });
+    io.to(`conversation-${conversationId}`).emit("user_typing", {
+      id: userData.id,
+      conversationId,
+    });
   });
 
   socket.on("typing_stop", (conversationId) => {
     const userData = userSockets.get(socket.id);
     if (!userData || !conversationId) return;
-
-    io.emit("user_stopped_typing", { id: userData.id, conversationId });
+    io.to(`conversation-${conversationId}`).emit("user_stopped_typing", {
+      id: userData.id,
+      conversationId,
+    });
   });
 
   // Close conversation
@@ -305,7 +313,10 @@ export function handleSocketConnection(io, socket) {
       pendingTransferRequests.delete(conversationId);
 
       await sendConversationClosedMessage(io, conversationId);
-      io.emit("conversation_closed", conversationId);
+      io.to(`conversation-${conversationId}`).emit(
+        "conversation_closed",
+        conversationId,
+      );
 
       console.log(`Conversation closed: ${conversationId}`);
     } catch (error) {

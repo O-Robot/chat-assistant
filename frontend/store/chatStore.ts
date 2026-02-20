@@ -3,6 +3,7 @@ import { Message, User, UserRole } from "@/types";
 import { getSocket, initializeSocket } from "@/lib/socket";
 import { Console } from "@/lib/constants";
 import { getConversationCookie } from "@/lib/cookies";
+import { v4 as uuidv4 } from "uuid";
 
 interface ChatState {
   messages: Message[];
@@ -179,8 +180,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         Console.log("Successfully reconnected!");
         get().setConnectionStatus("connected");
         get().setReconnecting(false, 0);
-        get().handleReconnection();
-      },
+        // get().handleReconnection();
+      },     
       onReconnectFailed: () => {
         Console.error("Reconnection failed");
         get().setConnectionStatus("disconnected");
@@ -425,7 +426,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     try {
       const message: Message = {
-        id: crypto.randomUUID(),
+        id: uuidv4(),
         ...messageData,
         timestamp: Date.now(),
       };
@@ -450,7 +451,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     // Check if message already exists
     const exists = messages.some((m) => m.id === msg.id);
+    const activeConversationId = getConversationCookie();
+
     if (exists) return;
+    if (msg.conversationId !== activeConversationId) return;
 
     set((state) => ({
       messages: [...state.messages, msg],

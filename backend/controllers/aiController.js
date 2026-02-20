@@ -365,7 +365,10 @@ export async function handleAIResponse(io, message) {
 
     const conversationHistory = recentMessages.reverse();
 
-    io.emit("user_typing", { id: "system", conversationId });
+    io.to(`conversation-${conversationId}`).emit("user_typing", {
+      id: "system",
+      conversationId,
+    });
 
     const systemPrompt = buildSystemPrompt(user.firstName, user.country);
 

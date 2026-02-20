@@ -40,6 +40,7 @@ import { ConfirmationModal } from "@/components/shared/ConfirmationModal";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { DarkModeToggle } from "@/components/shared/DarkModeToggle";
+import { v4 as uuidv4 } from "uuid";
 
 const ReactQuill = dynamic(() => import("react-quill-new"), {
   ssr: false,
@@ -340,7 +341,7 @@ export default function AdminPage() {
     try {
       const socket = getSocket();
       const message: Message = {
-        id: crypto.randomUUID(),
+        id: uuidv4(),
         conversationId: activeConv.id,
         senderId: "admin",
         content: input.trim(),
@@ -441,7 +442,7 @@ export default function AdminPage() {
   const handleLogout = async () => {
     try {
       await adminApi.post("/auth/admin/logout");
-      
+
       router.push("/admin/auth");
     } catch (err) {
       Console.error(err);

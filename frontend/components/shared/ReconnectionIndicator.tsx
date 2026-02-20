@@ -3,7 +3,6 @@ import { WifiOff, Loader2 } from "lucide-react";
 
 export const ReconnectionIndicator = () => {
   const { connectionStatus, isReconnecting, reconnectAttempt } = useChatStore();
-
   if (connectionStatus === "connected" && !isReconnecting) {
     return null;
   }
