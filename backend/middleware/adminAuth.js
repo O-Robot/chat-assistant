@@ -27,7 +27,7 @@ export function authenticateAdmin(req, res, next) {
 
 export async function loginAdmin(email, password) {
   if (email !== ADMIN_EMAIL) {
-    return { success: false, error: "Failed" };
+    return { success: false, error: "Invalid credentials" };
   }
   const isMatch = await bcrypt.compareSync(password, ADMIN_PASSWORD_HASH);
 
@@ -45,7 +45,7 @@ export async function loginAdmin(email, password) {
     );
     return { success: true, token };
   }
-  return { success: false, error };
+  return { success: false, error: "Login Failed, Contact Super Admin" };
 }
 
 // node -e "console.log(require('bcrypt').hashSync('admin123', 12))"
