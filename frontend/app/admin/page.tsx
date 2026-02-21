@@ -264,14 +264,31 @@ export default function AdminPage() {
     async function fetchUsers() {
       try {
         const response = await adminApi.get("/admin/users");
-        setUsers(response.data);
-        // setFilteredUsers(response.data);
-      } catch (error) {
-        Console.error(error);
+        if (response?.data && Array.isArray(response.data)) {
+          setUsers(response.data);
+        } else {
+          setUsers([]);
+          toast({
+            title: "Warning",
+            description: "Unexpected response from server",
+            variant: "destructive",
+          });
+        }
+      } catch (error: any) {
+        Console.error("Error fetching users:", error);
+        toast({
+          title: "Error",
+          description:
+            error?.response?.data?.message ||
+            "Failed to fetch users. Please try again later.",
+          variant: "destructive",
+        });
+        setUsers([]);
       } finally {
         setLoadStatus((prev) => ({ ...prev, users: false }));
       }
     }
+
     fetchUsers();
     const interval = setInterval(fetchUsers, 10000);
     return () => clearInterval(interval);
