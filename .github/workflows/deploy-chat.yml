@@ -1,74 +1,85 @@
 name: Deploy Chat System
 
 on:
-    push:
-        branches:
-            - main
+  push:
+    branches:
+      - main
 
 jobs:
-    deploy:
-        runs-on: ubuntu-latest
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      NODE_VERSION: "22"
 
-        steps:
-            - name: Checkout repo
-              uses: actions/checkout@v3
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-            - name: Setup Node.js
-              uses: actions/setup-node@v3
-              with:
-                  node-version: "22"
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
 
-            - name: Archive source
-              run: |
-                  tar czf chat_source.tar.gz \
-                  frontend \
-                  backend \
-                  package.json \
-                  package-lock.json
+      - name: Install dependencies
+        run: npm ci
 
-            - name: Upload source to server
-              uses: appleboy/scp-action@v0.1.5
-              with:
-                  host: ${{ secrets.SSH_HOST }}
-                  username: ${{ secrets.SSH_USER }}
-                  key: ${{ secrets.SSH_KEY }}
-                  port: 22
-                  source: "chat_source.tar.gz"
-                  target: "~/chat-system/"
+      - name: Build Frontend
+        run: |
+          NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }} \
+          NEXT_PUBLIC_CHAT_URL=${{ secrets.NEXT_PUBLIC_CHAT_URL }} \
+          NEXT_PUBLIC_PORTFOLIO_URL=${{ secrets.NEXT_PUBLIC_PORTFOLIO_URL }} \
+          npm run build --workspace=frontend
+          cp -r node_modules frontend/node_modules
+          tar -czf frontend.tar.gz -C frontend .next public package.json node_modules
+          rm -rf frontend/node_modules
 
-            - name: Build on server & reload PM2
-              uses: appleboy/ssh-action@v1
-              with:
-                  host: ${{ secrets.SSH_HOST }}
-                  username: ${{ secrets.SSH_USER }}
-                  key: ${{ secrets.SSH_KEY }}
-                  port: 22
-                  script: |
-                      set -e
-                      cd ~/chat-system
+      - name: Prepare Backend
+        run: |
+          tar -czf backend.tar.gz -C backend .
 
-                      # Backup current release
-                      if [ -d "frontend/.next" ]; then
-                        mv frontend/.next frontend/.next_backup_$(date +%s)
-                      fi
+      - name: Upload to Server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: 22
+          source: "frontend.tar.gz,backend.tar.gz"
+          target: "~/chat-system/"
 
-                      # Extract new source
-                      tar xzf chat_source.tar.gz
+      - name: Deploy & Reload PM2
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: 22
+          timeout: 20m
+          script: |
+            set -e
+            cd ~/chat-system
 
-                      # Install 
-                      npm ci
+            echo "📦 Extracting frontend..."
+            tar -xzf frontend.tar.gz -C frontend
+            rm frontend.tar.gz
 
-                      # Build frontend on the server using server .env.production
-                      npm run build --workspace frontend
+            echo "📦 Extracting backend..."
+            if [ -f backend/.env ]; then
+                mv backend/.env ../backend_env_backup
+            fi
+            tar -xzf backend.tar.gz -C backend
+            rm backend.tar.gz
+            if [ -f ../backend_env_backup ]; then
+                mv ../backend_env_backup backend/.env
+                rm -f ../backend_env_backup
+            fi
 
-                      # Install backend production deps
-                      cd backend
-                      npm install --production
-                      cd ..
+            echo "📦 Installing backend dependencies..."
+            npm install --omit=dev --prefix backend
 
-                      # Reload PM2
-                      pm2 reload ecosystem.config.js
-                      pm2 save
+            echo "🚀 Reloading PM2 apps..."
+            pm2 reload ecosystem.config.js || pm2 start ecosystem.config.js
+            pm2 save
 
-                      # Cleanup backups
-                      rm -rf frontend/.next_backup_*
+            echo "✅ Deployment complete — frontend & backend live!"
