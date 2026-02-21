@@ -2,6 +2,14 @@ import sqlite3 from "sqlite3";
 import { open } from "sqlite";
 
 export async function openDB() {
+  const dbPath = process.env.DB_PATH || path.resolve("./db/data.sqlite");
+  const dbDir = path.dirname(dbPath);
+
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+    console.log(`✅ Created missing DB folder: ${dbDir}`);
+  }
+
   const db = await open({
     filename: process.env.DB_PATH || "./db/data.sqlite",
     driver: sqlite3.Database,

@@ -265,7 +265,7 @@ export default function AdminPage() {
       try {
         const response = await adminApi.get("/admin/users");
         setUsers(response.data);
-        setFilteredUsers(response.data);
+        // setFilteredUsers(response.data);
       } catch (error) {
         Console.error(error);
       } finally {
@@ -516,7 +516,7 @@ export default function AdminPage() {
           <div className="w-full h-full flex items-center justify-center">
             <Loader2 size={20} className="animate-spin" />
           </div>
-        ) : (
+        ) : filteredUsers.length > 0 ? (
           <div className="flex-1 overflow-y-auto bg-background ">
             {filteredUsers?.map((u) => (
               <div
@@ -557,6 +557,10 @@ export default function AdminPage() {
                 </div>
               </div>
             ))}
+          </div>
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <p>No User Available</p>
           </div>
         )}
       </div>
@@ -810,10 +814,7 @@ export default function AdminPage() {
                         onFocus={() => setFocus(true)}
                         onBlur={() => setFocus(false)}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSend();
-                          }
+                          handleKeyDown(e);
                         }}
                         placeholder="Type a message..."
                         modules={modules}
