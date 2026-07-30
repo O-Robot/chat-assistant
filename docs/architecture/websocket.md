@@ -6,7 +6,7 @@ Describe the current Socket.IO event model and its operational limitations.
 
 ## Current flow
 
-The frontend connects to `NEXT_PUBLIC_API_URL` using Socket.IO at `/socket.io/`. On connection, the client emits `user_join`. The backend creates rooms named `user-{id}` and `conversation-{conversationId}` and emits messages to conversation rooms.
+The frontend connects to `NEXT_PUBLIC_API_URL` using Socket.IO at `/socket.io/`. The authenticated client emits `user_join`; the backend derives identity and tenant from the session, creates tenant/user/conversation rooms, and emits messages to conversation rooms. Socket.IO transport heartbeat is used with reconnect and explicit conversation resynchronisation.
 
 ```mermaid
 sequenceDiagram
@@ -24,19 +24,17 @@ sequenceDiagram
 
 ## Events in use
 
-- Client to server: `user_join`, `send_message`, `typing_start`, `typing_stop`, `close_conversation`, `transfer_request`.
-- Server to client: `receive_message`, `user_typing`, `user_stopped_typing`, `user_online`, `user_offline`, `users_online`, `conversation_closed`, and `system_offline_for_conversation`.
+- Client to server: `user_join`, `sync_conversation`, `send_message`, `mark_read`, `typing_start`, `typing_stop`, `close_conversation`, and `transfer_request`.
+- Server to client: `receive_message`, `conversation_read`, `user_typing`, `user_stopped_typing`, `user_online`, `user_offline`, `users_online`, `conversation_closed`, and `system_offline_for_conversation`.
 
 ## Current limitations
 
-- No Socket.IO handshake authentication or server-side event authorisation is implemented.
-- Presence, room assignment, transfer state, and AI response locks are held in process memory.
-- `request_sync` is emitted by the frontend but no server handler currently exists.
-- There is no event acknowledgement, durable delivery state, cursor sync, or typing expiry.
+- Presence, room assignment, transfer state, typing timers, and AI response locks are held in process memory; they do not yet work across multiple backend processes.
+- Messages use acknowledgement callbacks, duplicate message IDs are idempotent, and reconnect performs a cursor-compatible `sync_conversation` request.
+- Typing is automatically expired after five seconds. Presence tracks a set of sockets per authenticated principal, so one browser tab disconnecting does not mark another tab offline.
 
 ## TODO
 
-Define versioned event schemas, authenticated room membership, acknowledgement/error contracts, reconnect resynchronisation, and a distributed Socket.IO adapter before horizontal scaling.
+Define versioned event schemas, a distributed Socket.IO adapter, durable presence/typing state, and cross-process delivery guarantees before horizontal scaling.
 
 See [authentication](authentication.md) and [security checklist](../security/checklist.md).
-

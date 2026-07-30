@@ -1,5 +1,4 @@
 import { io, Socket } from "socket.io-client";
-import { useChatStore } from "@/store/chatStore";
 import { create } from "zustand";
 import { Console } from "./constants";
 
@@ -127,10 +126,6 @@ export const initializeSocket = (config?: SocketConfig) => {
       }
     });
 
-    // Listen for incoming messages
-    socket.on("receive_message", (message) => {
-      useChatStore.getState().receiveMessage(message);
-    });
   }
   return socket;
 };

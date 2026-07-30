@@ -3,6 +3,7 @@ import { openDB } from "../db.js";
 import { v4 as uuidv4 } from "uuid";
 import { exportUserTranscript } from "../utils/email/email.js";
 import { authenticateVisitor } from "../middleware/auth.js";
+import { getMessagesPage } from "../services/conversationService.js";
 
 const router = express.Router();
 
@@ -18,45 +19,12 @@ router.get("/:id/messages", authenticateVisitor, async (req, res) => {
       return res.status(404).json({ error: "Conversation not found" });
     }
 
-    const messages = await db.all(
-      `SELECT 
-        m.id, 
-        m.conversationId, 
-        m.senderId, 
-        m.content, 
-        m.timestamp,
-        u.firstName,
-        u.lastName,
-        u.email
-      FROM messages m
-      LEFT JOIN users u ON m.senderId = u.id
-      JOIN conversations c ON c.id = m.conversationId
-      WHERE m.conversationId = ? AND c.userId = ? AND c.tenantId = ?
-      ORDER BY m.timestamp ASC`,
-      [req.params.id, req.principal.id, req.principal.tenantId],
-    );
-
-    // Convert timestamp strings to numbers for frontend
-    const formattedMessages = messages.map((msg) => ({
-      ...msg,
-      timestamp: new Date(msg.timestamp).getTime(),
-      sender:
-        msg.senderId === "system"
-          ? {
-              id: "system",
-              firstName: "Robot",
-              lastName: "",
-              email: "robot@ogooluwaniadewale.com",
-            }
-          : {
-              id: msg.senderId,
-              firstName: msg.firstName,
-              lastName: msg.lastName,
-              email: msg.email,
-            },
-    }));
-
-    res.json(formattedMessages);
+    const page = await getMessagesPage(db, {
+      conversationId: req.params.id,
+      before: req.query.before,
+      limit: req.query.limit,
+    });
+    res.json(page);
   } catch (error) {
     console.error("Error fetching messages:", error);
     res.status(500).json({ error: "Failed to fetch messages" });

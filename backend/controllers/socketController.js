@@ -7,11 +7,35 @@ import {
 import { handleAIResponse } from "../controllers/aiController.js";
 import { notifyAdminNewChat } from "../utils/email/email.js";
 import { sanitizeHTML } from "../utils/sanitize.js";
+import { getMessagesPage } from "../services/conversationService.js";
 
 const onlineUsers = new Map();
 const userSockets = new Map();
 const conversationAdminStatus = new Map();
 const pendingTransferRequests = new Map();
+const typingTimeouts = new Map();
+const TYPING_TIMEOUT_MS = 5000;
+
+function presenceKey(principal) {
+  return `${principal.tenantId}:${principal.id}`;
+}
+
+function getOnlineUserIds(tenantId) {
+  return Array.from(onlineUsers.entries())
+    .filter(([key, socketIds]) => key.startsWith(`${tenantId}:`) && socketIds.size > 0)
+    .map(([key]) => key.slice(tenantId.length + 1));
+}
+
+function clearTyping(io, conversationId, userId) {
+  const key = `${conversationId}:${userId}`;
+  const timeout = typingTimeouts.get(key);
+  if (timeout) clearTimeout(timeout);
+  typingTimeouts.delete(key);
+  io.to(`conversation-${conversationId}`).emit("user_stopped_typing", {
+    id: userId,
+    conversationId,
+  });
+}
 
 export function handleSocketConnection(io, socket) {
   console.log(`Socket connected: ${socket.id}`);
@@ -20,7 +44,7 @@ export function handleSocketConnection(io, socket) {
   socket.join(tenantRoom);
 
   // User joins
-  socket.on("user_join", async () => {
+  socket.on("user_join", async (acknowledge) => {
     try {
       const db = await openDB();
       const role = principal.role;
@@ -36,7 +60,11 @@ export function handleSocketConnection(io, socket) {
       }
 
       userSockets.set(socket.id, userData);
-      onlineUsers.set(`${principal.tenantId}:${principal.id}`, socket.id);
+      const key = presenceKey(principal);
+      const sockets = onlineUsers.get(key) || new Set();
+      const wasOffline = sockets.size === 0;
+      sockets.add(socket.id);
+      onlineUsers.set(key, sockets);
       socket.join(`user-${principal.tenantId}-${principal.id}`);
 
       if (role === "visitor") {
@@ -57,6 +85,9 @@ export function handleSocketConnection(io, socket) {
         );
 
         if (conversation) {
+          for (const room of socket.rooms) {
+            if (room.startsWith("conversation-")) socket.leave(room);
+          }
           socket.join(`conversation-${conversation.id}`);
 
           const messageCount = await db.get(
@@ -84,7 +115,7 @@ export function handleSocketConnection(io, socket) {
         });
       }
 
-      io.to(tenantRoom).emit("user_online", principal.id);
+      if (wasOffline) io.to(tenantRoom).emit("user_online", principal.id);
 
       if (role === "admin") {
         io.to(tenantRoom).emit("user_online", "admin");
@@ -92,14 +123,14 @@ export function handleSocketConnection(io, socket) {
 
       io.to(tenantRoom).emit("user_online", "system");
 
-      const onlineUserIds = Array.from(onlineUsers.keys())
-        .filter((key) => key.startsWith(`${principal.tenantId}:`))
-        .map((key) => key.slice(principal.tenantId.length + 1));
+      const onlineUserIds = getOnlineUserIds(principal.tenantId);
       socket.emit("users_online", onlineUserIds);
 
       io.to(tenantRoom).emit("users_online", onlineUserIds);
+      acknowledge?.({ ok: true, onlineUserIds });
     } catch (error) {
       console.error("Error in user_join:", error);
+      acknowledge?.({ ok: false, error: "Unable to join chat" });
     }
   });
 
@@ -138,16 +169,22 @@ export function handleSocketConnection(io, socket) {
       const isAdminHandled = conversationAdminStatus.get(conversationId);
 
       // Save message
-      await db.run(
-        "INSERT INTO messages (id, conversationId, senderId, content, timestamp) VALUES (?, ?, ?, ?, ?)",
-        [
-          id,
-          conversationId,
-          senderId,
-          sanitizedContent,
-          new Date().toISOString(),
-        ],
-      );
+      const timestamp = new Date().toISOString();
+      try {
+        await db.run(
+          "INSERT INTO messages (id, conversationId, senderId, content, timestamp) VALUES (?, ?, ?, ?, ?)",
+          [id, conversationId, senderId, sanitizedContent, timestamp],
+        );
+      } catch (error) {
+        if (error.code !== "SQLITE_CONSTRAINT") throw error;
+        const existing = await db.get(
+          "SELECT id, conversationId, senderId, content, timestamp FROM messages WHERE id = ? AND conversationId = ?",
+          [id, conversationId],
+        );
+        if (!existing) throw error;
+        acknowledge?.({ ok: true, message: { ...existing, timestamp: new Date(existing.timestamp).getTime() } });
+        return;
+      }
 
       console.log(`Message saved: ${id} in conversation ${conversationId}`);
 
@@ -175,7 +212,7 @@ export function handleSocketConnection(io, socket) {
         id,
         conversationId,
         senderId,
-        timestamp: Date.now(),
+        timestamp: new Date(timestamp).getTime(),
         content: sanitizedContent,
         sender,
       };
@@ -263,7 +300,7 @@ export function handleSocketConnection(io, socket) {
 
       if (senderId !== "system" && senderId !== "admin") {
         const sanitizedMessage = {
-          ...message,
+          ...messageWithSender,
           content: sanitizedContent,
         };
         setTimeout(async () => {
@@ -272,6 +309,7 @@ export function handleSocketConnection(io, socket) {
       }
     } catch (error) {
       console.error("Error in send_message:", error);
+      acknowledge?.({ ok: false, error: "Unable to send message" });
     }
   });
 
@@ -291,7 +329,52 @@ export function handleSocketConnection(io, socket) {
     }
   });
 
-  // Typing indicators - broadcast to EVERYONE
+  socket.on("sync_conversation", async ({ conversationId, before, limit } = {}, acknowledge) => {
+    try {
+      if (!conversationId || !socket.rooms.has(`conversation-${conversationId}`)) {
+        return acknowledge?.({ ok: false, error: "Conversation is unavailable" });
+      }
+      const db = await openDB();
+      const page = await getMessagesPage(db, { conversationId, before, limit });
+      acknowledge?.({ ok: true, ...page });
+    } catch (error) {
+      console.error("Error syncing conversation:", error);
+      acknowledge?.({ ok: false, error: "Unable to sync messages" });
+    }
+  });
+
+  socket.on("mark_read", async ({ conversationId, messageId } = {}, acknowledge) => {
+    try {
+      if (!conversationId || !messageId || !socket.rooms.has(`conversation-${conversationId}`)) {
+        return acknowledge?.({ ok: false, error: "Conversation is unavailable" });
+      }
+      const db = await openDB();
+      const message = await db.get(
+        "SELECT id FROM messages WHERE id = ? AND conversationId = ?",
+        [messageId, conversationId],
+      );
+      if (!message) return acknowledge?.({ ok: false, error: "Message not found" });
+      const readerId = principal.role === "admin" ? "admin" : principal.id;
+      await db.run(
+        `INSERT INTO conversation_reads (conversationId, tenantId, readerId, lastReadMessageId, readAt)
+         VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(conversationId, readerId) DO UPDATE SET
+           lastReadMessageId = excluded.lastReadMessageId, readAt = CURRENT_TIMESTAMP`,
+        [conversationId, principal.tenantId, readerId, messageId],
+      );
+      io.to(`conversation-${conversationId}`).emit("conversation_read", {
+        conversationId,
+        readerId,
+        messageId,
+      });
+      acknowledge?.({ ok: true });
+    } catch (error) {
+      console.error("Error marking conversation read:", error);
+      acknowledge?.({ ok: false, error: "Unable to update read state" });
+    }
+  });
+
+  // Typing indicators
   socket.on("typing_start", (conversationId) => {
     const userData = userSockets.get(socket.id);
     if (!userData || !conversationId || !socket.rooms.has(`conversation-${conversationId}`)) return;
@@ -299,15 +382,19 @@ export function handleSocketConnection(io, socket) {
       id: userData.id,
       conversationId,
     });
+    const key = `${conversationId}:${userData.id}`;
+    const existingTimeout = typingTimeouts.get(key);
+    if (existingTimeout) clearTimeout(existingTimeout);
+    typingTimeouts.set(
+      key,
+      setTimeout(() => clearTyping(io, conversationId, userData.id), TYPING_TIMEOUT_MS),
+    );
   });
 
   socket.on("typing_stop", (conversationId) => {
     const userData = userSockets.get(socket.id);
     if (!userData || !conversationId || !socket.rooms.has(`conversation-${conversationId}`)) return;
-    io.to(`conversation-${conversationId}`).emit("user_stopped_typing", {
-      id: userData.id,
-      conversationId,
-    });
+    clearTyping(io, conversationId, userData.id);
   });
 
   // Close conversation
@@ -351,19 +438,25 @@ export function handleSocketConnection(io, socket) {
       );
 
       // Remove from maps
-      onlineUsers.delete(`${principal.tenantId}:${principal.id}`);
+      const key = presenceKey(principal);
+      const sockets = onlineUsers.get(key);
+      sockets?.delete(socket.id);
+      const isOffline = !sockets || sockets.size === 0;
+      if (isOffline) onlineUsers.delete(key);
       userSockets.delete(socket.id);
 
-      io.to(tenantRoom).emit("user_offline", principal.id);
+      for (const room of socket.rooms) {
+        if (room.startsWith("conversation-")) clearTyping(io, room.slice("conversation-".length), principal.id);
+      }
 
-      if (userData.role === "admin") {
+      if (isOffline) io.to(tenantRoom).emit("user_offline", principal.id);
+
+      if (isOffline && userData.role === "admin") {
         io.to(tenantRoom).emit("user_offline", "admin");
       }
 
       // Send updated online users list to everyone
-      const onlineUserIds = Array.from(onlineUsers.keys())
-        .filter((key) => key.startsWith(`${principal.tenantId}:`))
-        .map((key) => key.slice(principal.tenantId.length + 1));
+      const onlineUserIds = getOnlineUserIds(principal.tenantId);
       io.to(tenantRoom).emit("users_online", onlineUserIds);
     }
 

@@ -92,8 +92,22 @@ export async function openDB() {
   `);
 
   await db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_messages_conversation_timestamp ON messages(conversationId, timestamp ASC)",
+    "CREATE INDEX IF NOT EXISTS idx_messages_conversation_timestamp ON messages(conversationId, timestamp DESC, id DESC)",
   );
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS conversation_reads (
+      conversationId TEXT NOT NULL,
+      tenantId TEXT NOT NULL,
+      readerId TEXT NOT NULL,
+      lastReadMessageId TEXT,
+      readAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (conversationId, readerId),
+      FOREIGN KEY (conversationId) REFERENCES conversations(id),
+      FOREIGN KEY (lastReadMessageId) REFERENCES messages(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_conversation_reads_tenant ON conversation_reads(tenantId, readerId, readAt DESC);
+  `);
 
   return db;
 }

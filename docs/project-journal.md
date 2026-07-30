@@ -8,6 +8,7 @@ This document is a chronological development log for the project. Append each co
 | ----- | ---------- | -------------- | --------------------------------------------------------------------------- |
 | 003   | 2026-08-02 | 🚧 In Progress | Pending                                                                     |
 | P001  | 2026-07-30 | ✅ Completed   | `feat(security): harden tenant-scoped sessions and Socket.IO authorisation` |
+| P002  | 2026-07-30 | ✅ Completed   | `feat(realtime): harden message delivery and conversation state`            |
 
 <details>
 <summary><strong>Phase 001 — Authentication Hardening</strong></summary>
@@ -45,6 +46,66 @@ Refresh token migration required.
 
 ```text
 feat(auth): implement secure JWT authentication flow
+```
+
+</details>
+
+<details>
+<summary><strong>P002 — Realtime Reliability &amp; Conversation Integrity</strong></summary>
+
+### Objective
+
+Make authenticated realtime chat reliable under duplicate delivery, reconnects, multiple browser sessions, stale typing state, and bounded message-history reads.
+
+### Work Completed
+
+- Added tenant-safe, bounded cursor pagination for visitor message history with deterministic `timestamp, id` ordering.
+- Added `conversation_reads` persistence and authenticated `mark_read` socket events.
+- Added `sync_conversation` with acknowledgement-based reconnect recovery.
+- Made client socket listeners idempotent and removed a duplicate global message listener.
+- Added acknowledgement-based optimistic sends with pending, delivered, and failed state; pending/failed messages retry after reconnect.
+- Made duplicate message IDs idempotent at the server.
+- Added five-second typing expiry and multi-socket presence tracking.
+- Added message/read indexes and admin send failure recovery.
+
+### Files Changed
+
+- `backend/db.js`
+- `backend/services/conversationService.js`
+- `backend/routes/conversations.js`
+- `backend/controllers/socketController.js`
+- `frontend/types/chat.ts`
+- `frontend/lib/socket.ts`
+- `frontend/store/chatStore.ts`
+- `frontend/components/widget/ChatWindow.tsx`
+- `frontend/components/chat/FullChatWindow.tsx`
+- `frontend/app/admin/page.tsx`
+- `docs/architecture/websocket.md`
+- `docs/architecture/database.md`
+
+### Verification Steps
+
+- Ran `node --check` for changed backend modules.
+- Ran `npx tsc --noEmit --project frontend/tsconfig.json` successfully.
+- Used an isolated temporary SQLite backend to verify acknowledged send, duplicate message idempotency, conversation sync, persisted read acknowledgement, typing expiry, and multi-session presence.
+- Ran the frontend production build; compilation completed successfully.
+- Ran frontend lint. It remains blocked by the same four pre-existing unescaped-apostrophe errors in visitor-chat JSX, plus existing warnings; P002 introduced no new lint errors.
+
+### Remaining Risks
+
+- Presence, typing timers, transfer state, and AI locks are still in-memory and are not shared across backend instances.
+- Read markers are persisted but are not yet surfaced as a full read-receipt UI.
+- The admin conversation endpoint still loads complete selected-user histories and needs a paginated inbox/read model at larger scale.
+- Formal schema migrations and realtime integration tests remain outstanding.
+
+### Next Phase
+
+P003 — Pending definition.
+
+### Suggested Conventional Commit
+
+```text
+feat(realtime): harden message delivery and conversation state
 ```
 
 </details>
@@ -132,7 +193,7 @@ Eliminate the release-blocking authentication, authorisation, tenant-isolation, 
 
 ### Next Phase
 
-P002 — Widget embed security and cross-origin hardening.
+P002 — Realtime Reliability & Conversation Integrity.
 
 ### Suggested Conventional Commit
 

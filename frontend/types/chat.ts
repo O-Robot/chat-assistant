@@ -7,7 +7,7 @@ export type Message = {
   content: string;
   timestamp: number;
   formattedTime?: string;
-  status?: "sent" | "delivered" | "read";
+  status?: "pending" | "sent" | "delivered" | "read" | "failed";
   sender?: any;
 };
 

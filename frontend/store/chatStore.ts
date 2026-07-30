@@ -31,6 +31,7 @@ interface ChatState {
   addMessage: (message: Message) => void;
   clearMessages: () => void;
   sendMessage: (message: Omit<Message, "id" | "timestamp">) => Promise<void>;
+  retryFailedMessage: (messageId: string) => void;
   receiveMessage: (message: Message) => void;
   setSelectedVisitorId: (visitorId: string | null) => void;
   setIsChatFocused: (focused: boolean) => void;
@@ -58,6 +59,7 @@ interface ChatState {
 const STORAGE_PREFIX = "chat-messages-";
 const LAST_SYNC_PREFIX = "chat-last-sync-";
 const LAST_READ_PREFIX = "chat-last-read-";
+let listenersInitialised = false;
 
 const getStorage = () => {
   if (typeof window === "undefined") return null;
@@ -150,23 +152,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    const userData = {
-      id: user.id,
-      firstName: user.firstName || "",
-      lastName: user.lastName || "",
-      email: user.email || "",
-      role: user.role || UserRole.VISITOR,
-      status: user.status || "online",
-      conversationId: conversationId,
-    };
-
-    Console.log("Rejoining with user data:", userData);
-
-    socket.emit("user_join", userData);
-
-    Console.log("User rejoined conversation:", conversationId);
-
-    socket.emit("request_sync", conversationId);
+    socket.timeout(10000).emit(
+      "user_join",
+      (error: Error | null, result: { ok?: boolean } | undefined) => {
+        if (error || !result?.ok) return;
+        socket.timeout(10000).emit(
+          "sync_conversation",
+          { conversationId, limit: 50 },
+          (
+            syncError: Error | null,
+            page: { ok?: boolean; messages?: Message[] } | undefined,
+          ) => {
+            if (!syncError && page?.ok) page.messages?.forEach(get().receiveMessage);
+          },
+        );
+        get().messages
+          .filter(
+            (message) =>
+              message.conversationId === conversationId &&
+              (message.status === "pending" || message.status === "failed"),
+          )
+          .forEach((message) => get().retryFailedMessage(message.id));
+      },
+    );
   },
 
   initializeSocketListeners: () => {
@@ -180,7 +188,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         Console.log("Successfully reconnected!");
         get().setConnectionStatus("connected");
         get().setReconnecting(false, 0);
-        // get().handleReconnection();
+        get().handleReconnection();
       },     
       onReconnectFailed: () => {
         Console.error("Reconnection failed");
@@ -193,19 +201,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       },
     });
 
+    if (listenersInitialised) return;
+    listenersInitialised = true;
+
     socket.on("connect", () => {
       Console.log("Socket connected");
       get().setConnectionStatus("connected");
-      const { user } = get();
-      if (user?.id) {
-        socket.emit("user_join", {
-          id: user.id,
-          firstName: user.firstName,
-          lastName: user?.lastName,
-          email: user.email,
-          role: user.role || UserRole.VISITOR,
-        });
-      }
+      if (get().user?.id) get().handleReconnection();
       get().updateOnlineStatus("system", true);
     });
 
@@ -320,6 +322,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (storage && lastMessage.conversationId) {
         const key = LAST_READ_PREFIX + lastMessage.conversationId;
         storage.setItem(key, lastMessage.id);
+        getSocket().timeout(5000).emit("mark_read", {
+          conversationId: lastMessage.conversationId,
+          messageId: lastMessage.id,
+        });
       }
     } else {
       set({ unreadCount: 0 });
@@ -426,6 +432,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         id: uuidv4(),
         ...messageData,
         timestamp: Date.now(),
+        status: "pending",
       };
 
       set((state) => ({
@@ -435,12 +442,53 @@ export const useChatStore = create<ChatState>((set, get) => ({
       get().saveMessagesToLocalStorage(message.conversationId);
 
       const socket = getSocket();
-      socket.emit("send_message", message);
+      socket.timeout(10000).emit(
+        "send_message",
+        message,
+        (error: Error | null, result: { ok?: boolean; message?: Message } | undefined) => {
+          if (error || !result?.ok || !result.message) {
+            set((state) => ({
+              messages: state.messages.map((item) =>
+                item.id === message.id ? { ...item, status: "failed" } : item,
+              ),
+            }));
+            return;
+          }
+          get().receiveMessage({ ...result.message, status: "delivered" });
+        },
+      );
     } catch (error) {
       Console.error("Error sending message:", error);
     } finally {
       set({ isSendingMessage: false });
     }
+  },
+
+  retryFailedMessage: (messageId) => {
+    const message = get().messages.find((item) => item.id === messageId);
+    if (!message || (message.status !== "failed" && message.status !== "pending")) return;
+
+    set((state) => ({
+      messages: state.messages.map((item) =>
+        item.id === messageId ? { ...item, status: "pending" } : item,
+      ),
+    }));
+
+    getSocket().timeout(10000).emit(
+      "send_message",
+      message,
+      (error: Error | null, result: { ok?: boolean; message?: Message } | undefined) => {
+        if (error || !result?.ok || !result.message) {
+          set((state) => ({
+            messages: state.messages.map((item) =>
+              item.id === messageId ? { ...item, status: "failed" } : item,
+            ),
+          }));
+          return;
+        }
+        get().receiveMessage({ ...result.message, status: "delivered" });
+      },
+    );
   },
 
   receiveMessage: (msg) => {
@@ -450,11 +498,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const exists = messages.some((m) => m.id === msg.id);
     const activeConversationId = getConversationCookie();
 
-    if (exists) return;
     if (msg.conversationId !== activeConversationId) return;
 
+    if (exists) {
+      set((state) => ({
+        messages: state.messages.map((item) =>
+          item.id === msg.id
+            ? { ...item, ...msg, status: msg.status || "delivered" }
+            : item,
+        ),
+      }));
+      return;
+    }
+
     set((state) => ({
-      messages: [...state.messages, msg],
+      messages: [...state.messages, msg].sort(
+        (a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id),
+      ),
     }));
 
     get().saveMessagesToLocalStorage(msg.conversationId);

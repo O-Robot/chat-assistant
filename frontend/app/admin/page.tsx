@@ -331,6 +331,14 @@ export default function AdminPage() {
         res.data.forEach((conv: any) =>
           conv.messages.forEach((msg: Message) => receiveMessage(msg)),
         );
+        const activeConversation = res.data[res.data.length - 1];
+        const lastMessage = activeConversation?.messages?.[activeConversation.messages.length - 1];
+        if (lastMessage) {
+          getSocket().timeout(5000).emit("mark_read", {
+            conversationId: activeConversation.id,
+            messageId: lastMessage.id,
+          });
+        }
         if (user) {
           setUser(user);
         }
@@ -364,8 +372,20 @@ export default function AdminPage() {
         content: input.trim(),
         timestamp: Date.now(),
       };
-      receiveMessage(message);
-      socket.emit("send_message", message);
+      socket.timeout(10000).emit(
+        "send_message",
+        message,
+        (error: Error | null, result: { ok?: boolean } | undefined) => {
+          if (error || !result?.ok) {
+            setInput(message.content);
+            toast({
+              title: "Message not sent",
+              description: "Your message was restored. Please try again.",
+              variant: "destructive",
+            });
+          }
+        },
+      );
       setInput("");
       if (textareaRef.current) textareaRef.current.style.height = "auto";
     } catch (err) {

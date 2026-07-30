@@ -155,7 +155,7 @@ export function FullChatWindow({
         const response = await userApi.get(
           `/api/conversations/${conversationId}/messages/`,
         );
-        const msgs: Message[] = response.data;
+        const msgs: Message[] = response.data.messages || response.data;
 
         clearMessages();
         msgs.forEach(receiveMessage);
