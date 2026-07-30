@@ -36,9 +36,6 @@ export default function AdminAuthPage() {
       const response = await adminApi.post("/auth/admin/login", form);
 
       if (response.data.success) {
-        // Store token in localStorage as backup
-        localStorage.setItem("admin_token", response.data.token);
-
         toast({
           title: "Welcome back!",
           description: "Login successful",

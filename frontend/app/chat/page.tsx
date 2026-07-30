@@ -54,6 +54,7 @@ export default function VisitorsPage() {
       try {
         const res = await fetch(
           `${process.env.NEXT_PUBLIC_API_URL}/api/users/${storedUser.id}`,
+          { credentials: "include" },
         );
 
         if (!res.ok) {

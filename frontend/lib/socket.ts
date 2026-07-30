@@ -44,7 +44,7 @@ export const initializeSocket = (config?: SocketConfig) => {
     socket = io(SOCKET_URL, {
       path: "/socket.io/",
       transports: ["polling", "websocket"],
-      withCredentials: false,
+      withCredentials: true,
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: RECONNECT_DELAY,

@@ -11,7 +11,10 @@ router.use(authenticateAdmin);
 router.get("/users", async (req, res) => {
   try {
     const db = await openDB();
-    const users = await db.all("SELECT * FROM users ORDER BY createdAt DESC");
+    const users = await db.all(
+      "SELECT * FROM users WHERE tenantId = ? ORDER BY createdAt DESC",
+      [req.admin.tenantId],
+    );
     res.json(users || []);
   } catch (error) {
     console.error("Error fetching users:", error);
@@ -41,9 +44,10 @@ router.put("/users/:id", async (req, res) => {
       return res.status(400).json({ message: "All fields are required" });
     }
 
-    const existingUser = await db.get("SELECT id FROM users WHERE id = ?", [
-      id,
-    ]);
+    const existingUser = await db.get(
+      "SELECT id FROM users WHERE id = ? AND tenantId = ?",
+      [id, req.admin.tenantId],
+    );
 
     if (!existingUser) {
       return res.status(404).json({ message: "User not found" });
@@ -52,11 +56,11 @@ router.put("/users/:id", async (req, res) => {
     await db.run(
       `UPDATE users 
        SET firstName = ?, lastName = ?, email = ?, phone = ?, country = ? 
-       WHERE id = ?`,
-      [firstName, lastName, email, phone, country, id],
+       WHERE id = ? AND tenantId = ?`,
+      [firstName, lastName, email, phone, country, id, req.admin.tenantId],
     );
 
-    const updatedUser = await db.get("SELECT * FROM users WHERE id = ?", [id]);
+    const updatedUser = await db.get("SELECT * FROM users WHERE id = ? AND tenantId = ?", [id, req.admin.tenantId]);
     res.json(updatedUser);
   } catch (error) {
     console.error("Error updating user:", error);
@@ -75,9 +79,10 @@ router.get("/conversations/:userId", async (req, res) => {
 
     const db = await openDB();
 
-    const userExists = await db.get("SELECT id FROM users WHERE id = ?", [
-      userId,
-    ]);
+    const userExists = await db.get(
+      "SELECT id FROM users WHERE id = ? AND tenantId = ?",
+      [userId, req.admin.tenantId],
+    );
 
     if (!userExists) {
       return res.status(404).json({ message: "User not found" });
@@ -85,9 +90,9 @@ router.get("/conversations/:userId", async (req, res) => {
 
     const conversations = await db.all(
       `SELECT * FROM conversations 
-       WHERE userId = ? 
+       WHERE userId = ? AND tenantId = ?
        ORDER BY createdAt ASC`,
-      [userId],
+      [userId, req.admin.tenantId],
     );
 
     if (!conversations || conversations.length === 0) {
@@ -100,9 +105,10 @@ router.get("/conversations/:userId", async (req, res) => {
           `SELECT m.*, u.firstName, u.lastName, u.email 
            FROM messages m 
            LEFT JOIN users u ON m.senderId = u.id 
-           WHERE m.conversationId = ? 
+           JOIN conversations c ON c.id = m.conversationId
+           WHERE m.conversationId = ? AND c.tenantId = ?
            ORDER BY m.timestamp ASC`,
-          [conv.id],
+          [conv.id, req.admin.tenantId],
         );
 
         return {
@@ -147,7 +153,10 @@ router.post("/conversations/:id/export", async (req, res) => {
       return res.status(400).json({ error: "ADMIN_EMAIL not set" });
     }
 
-    await exportConversation(id, email, res);
+    const db = await openDB();
+    const conversation = await db.get("SELECT id FROM conversations WHERE id = ? AND tenantId = ?", [id, req.admin.tenantId]);
+    if (!conversation) return res.status(404).json({ error: "Conversation not found" });
+    await exportConversation(id, email, res, req.admin.tenantId);
   } catch (error) {
     console.error("Error exporting conversation:", error);
     res.status(500).json({ error: "Failed to export conversation" });
@@ -162,7 +171,10 @@ router.post("/conversations/:id/export/:email", async (req, res) => {
       return res.status(400).json({ error: "No email provided" });
     }
 
-    await exportConversation(id, email, res);
+    const db = await openDB();
+    const conversation = await db.get("SELECT id FROM conversations WHERE id = ? AND tenantId = ?", [id, req.admin.tenantId]);
+    if (!conversation) return res.status(404).json({ error: "Conversation not found" });
+    await exportConversation(id, email, res, req.admin.tenantId);
   } catch (error) {
     console.error("Error exporting conversation:", error);
     res.status(500).json({ error: "Failed to export conversation" });

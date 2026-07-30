@@ -17,6 +17,22 @@ export async function openDB() {
     driver: sqlite3.Database,
   });
 
+  await db.exec("PRAGMA foreign_keys = ON");
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS tenants (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  const tenantId = process.env.DEFAULT_TENANT_ID || "portfolio";
+  await db.run(
+    "INSERT OR IGNORE INTO tenants (id, name) VALUES (?, ?)",
+    [tenantId, process.env.TENANT_NAME || "Portfolio"],
+  );
+
   // Users table
   await db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -26,6 +42,7 @@ export async function openDB() {
       email TEXT UNIQUE,
       phone TEXT,
       country TEXT,
+      tenantId TEXT,
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -36,10 +53,30 @@ export async function openDB() {
       id TEXT PRIMARY KEY,
       userId TEXT,
       status TEXT DEFAULT 'open', -- open / closed / transferred / resolved
+      tenantId TEXT,
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
       closedAt DATETIME,
       FOREIGN KEY (userId) REFERENCES users(id)
     )
+  `);
+
+  const userColumns = await db.all("PRAGMA table_info(users)");
+  if (!userColumns.some((column) => column.name === "tenantId")) {
+    await db.exec("ALTER TABLE users ADD COLUMN tenantId TEXT");
+  }
+  const conversationColumns = await db.all("PRAGMA table_info(conversations)");
+  if (!conversationColumns.some((column) => column.name === "tenantId")) {
+    await db.exec("ALTER TABLE conversations ADD COLUMN tenantId TEXT");
+  }
+
+  await db.run("UPDATE users SET tenantId = ? WHERE tenantId IS NULL", [tenantId]);
+  await db.run(
+    "UPDATE conversations SET tenantId = ? WHERE tenantId IS NULL",
+    [tenantId],
+  );
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_users_tenant_created ON users(tenantId, createdAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_conversations_tenant_user_status ON conversations(tenantId, userId, status, createdAt DESC);
   `);
 
   // Messages table
@@ -53,6 +90,10 @@ export async function openDB() {
       FOREIGN KEY (conversationId) REFERENCES conversations(id)
     )
   `);
+
+  await db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_messages_conversation_timestamp ON messages(conversationId, timestamp ASC)",
+  );
 
   return db;
 }

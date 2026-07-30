@@ -378,7 +378,10 @@ export async function handleAIResponse(io, message) {
     );
 
     // Stop typing
-    io.emit("user_stopped_typing", { id: "system", conversationId });
+    io.to(`conversation-${conversationId}`).emit("user_stopped_typing", {
+      id: "system",
+      conversationId,
+    });
 
     const latestConversation = await db.get(
       "SELECT status FROM conversations WHERE id = ?",
@@ -409,7 +412,10 @@ export async function handleAIResponse(io, message) {
   } catch (error) {
     console.error("AI pipeline failed:", error);
 
-    io.emit("user_stopped_typing", { id: "system", conversationId });
+    io.to(`conversation-${conversationId}`).emit("user_stopped_typing", {
+      id: "system",
+      conversationId,
+    });
 
     await sendSystemMessage(
       io,

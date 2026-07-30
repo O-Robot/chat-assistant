@@ -119,7 +119,7 @@ export async function notifyAdminNewChat(
 }
 
 // export chat
-export async function exportConversation(id, email, res) {
+export async function exportConversation(id, email, res, tenantId) {
   let pdfPath = null;
   try {
     const db = await openDB();
@@ -128,9 +128,10 @@ export async function exportConversation(id, email, res) {
       `SELECT c.*, u.firstName, u.lastName, u.email as userEmail
        FROM conversations c
        JOIN users u ON c.userId = u.id
-       WHERE c.userId = (SELECT userId FROM conversations WHERE id = ?)
+       WHERE c.userId = (SELECT userId FROM conversations WHERE id = ? AND tenantId = ?)
+         AND c.tenantId = ?
        ORDER BY c.createdAt ASC`,
-      [id],
+      [id, tenantId, tenantId],
     );
 
     if (!conversations?.length) {

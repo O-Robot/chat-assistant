@@ -2,13 +2,21 @@ import express from "express";
 import { openDB } from "../db.js";
 import { v4 as uuidv4 } from "uuid";
 import { exportUserTranscript } from "../utils/email/email.js";
+import { authenticateVisitor } from "../middleware/auth.js";
 
 const router = express.Router();
 
 // Get messages for a conversation
-router.get("/:id/messages", async (req, res) => {
+router.get("/:id/messages", authenticateVisitor, async (req, res) => {
   try {
     const db = await openDB();
+    const conversation = await db.get(
+      "SELECT id FROM conversations WHERE id = ? AND userId = ? AND tenantId = ?",
+      [req.params.id, req.principal.id, req.principal.tenantId],
+    );
+    if (!conversation) {
+      return res.status(404).json({ error: "Conversation not found" });
+    }
 
     const messages = await db.all(
       `SELECT 
@@ -22,9 +30,10 @@ router.get("/:id/messages", async (req, res) => {
         u.email
       FROM messages m
       LEFT JOIN users u ON m.senderId = u.id
-      WHERE m.conversationId = ? 
+      JOIN conversations c ON c.id = m.conversationId
+      WHERE m.conversationId = ? AND c.userId = ? AND c.tenantId = ?
       ORDER BY m.timestamp ASC`,
-      [req.params.id],
+      [req.params.id, req.principal.id, req.principal.tenantId],
     );
 
     // Convert timestamp strings to numbers for frontend
@@ -55,13 +64,13 @@ router.get("/:id/messages", async (req, res) => {
 });
 
 // Get conversation details
-router.get("/:id", async (req, res) => {
+router.get("/:id", authenticateVisitor, async (req, res) => {
   try {
     const db = await openDB();
 
     const conversation = await db.get(
-      `SELECT * FROM conversations WHERE id = ?`,
-      [req.params.id],
+      `SELECT * FROM conversations WHERE id = ? AND userId = ? AND tenantId = ?`,
+      [req.params.id, req.principal.id, req.principal.tenantId],
     );
 
     if (!conversation) {
@@ -76,30 +85,22 @@ router.get("/:id", async (req, res) => {
 });
 
 // Create new conversation
-router.post("/new", async (req, res) => {
+router.post("/new", authenticateVisitor, async (req, res) => {
   try {
-    const { userId } = req.body;
-
-    if (!userId) {
-      return res.status(400).json({ error: "User ID required" });
-    }
-
     const db = await openDB();
+    const { id: userId, tenantId } = req.principal;
 
     // Close any existing open conversations
     await db.run(
       `UPDATE conversations 
        SET status = 'closed', closedAt = CURRENT_TIMESTAMP 
-       WHERE userId = ? AND status = 'open'`,
-      [userId],
+       WHERE userId = ? AND tenantId = ? AND status = 'open'`,
+      [userId, tenantId],
     );
 
     // Create new conversation
     const conversationId = uuidv4();
-    await db.run(
-      "INSERT INTO conversations (id, userId, status) VALUES (?, ?, 'open')",
-      [conversationId, userId],
-    );
+    await db.run("INSERT INTO conversations (id, userId, status, tenantId) VALUES (?, ?, 'open', ?)", [conversationId, userId, tenantId]);
 
     res.json({ conversationId });
   } catch (error) {
@@ -109,14 +110,10 @@ router.post("/new", async (req, res) => {
 });
 
 // Send transcript
-router.post("/:id/send-transcript", async (req, res) => {
+router.post("/:id/send-transcript", authenticateVisitor, async (req, res) => {
   try {
     const { email } = req.body;
     const conversationId = req.params.id;
-
-    if (!email) {
-      return res.status(400).json({ error: "Email required" });
-    }
 
     const db = await openDB();
 
@@ -126,12 +123,16 @@ router.post("/:id/send-transcript", async (req, res) => {
               u.firstName, u.lastName, u.email AS userEmail, u.phone, u.country
        FROM conversations c
        JOIN users u ON c.userId = u.id
-       WHERE c.id = ?`,
-      [conversationId],
+       WHERE c.id = ? AND c.userId = ? AND c.tenantId = ?`,
+      [conversationId, req.principal.id, req.principal.tenantId],
     );
 
     if (!convo)
       return res.status(404).json({ error: "Conversation not found" });
+
+    if (email && email.trim().toLowerCase() !== convo.userEmail.trim().toLowerCase()) {
+      return res.status(403).json({ error: "Transcript recipient must match your verified email" });
+    }
 
     const messages = await db.all(
       `SELECT m.*, u.firstName, u.lastName
@@ -152,16 +153,20 @@ router.post("/:id/send-transcript", async (req, res) => {
 });
 
 // Close a conversation
-router.post("/:id/close", async (req, res) => {
+router.post("/:id/close", authenticateVisitor, async (req, res) => {
   try {
     const db = await openDB();
 
-    await db.run(
+    const result = await db.run(
       `UPDATE conversations 
        SET status = 'closed', closedAt = CURRENT_TIMESTAMP 
-       WHERE id = ?`,
-      [req.params.id],
+       WHERE id = ? AND userId = ? AND tenantId = ?`,
+      [req.params.id, req.principal.id, req.principal.tenantId],
     );
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: "Conversation not found" });
+    }
 
     res.json({ success: true, message: "Conversation closed" });
   } catch (error) {

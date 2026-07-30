@@ -397,12 +397,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const socket = getSocket();
 
     if (user?.id && user?.firstName && user?.email && user?.role) {
+      socket.connect();
       socket.emit("user_join", {
-        id: user.id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        role: user.role || UserRole.VISITOR,
+        conversationId: getConversationCookie(),
       });
     }
   },

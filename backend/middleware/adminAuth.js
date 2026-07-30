@@ -1,21 +1,21 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
+import { getDefaultTenantId, verifyToken } from "./auth.js";
 
-const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-jwt-key";
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@example.com";
+const JWT_SECRET = process.env.JWT_SECRET;
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH; // Change this!
 
 export function authenticateAdmin(req, res, next) {
-  const token =
-    req.cookies?.whoami || req.headers.authorization?.replace("Bearer ", "");
+  const token = req.cookies?.whoami;
 
   if (!token) {
     return res.status(401).json({ message: "Unauthorized" });
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded.role !== "admin") {
+    const decoded = verifyToken(token);
+    if (decoded.role !== "admin" || !decoded.tenantId) {
       return res.status(403).json({ message: "Forbidden" });
     }
     req.admin = decoded;
@@ -26,10 +26,13 @@ export function authenticateAdmin(req, res, next) {
 }
 
 export async function loginAdmin(email, password) {
+  if (!JWT_SECRET || JWT_SECRET.length < 32 || !ADMIN_EMAIL || !ADMIN_PASSWORD_HASH) {
+    throw new Error("Admin authentication is not configured securely");
+  }
   if (email !== ADMIN_EMAIL) {
     return { success: false, error: "Invalid credentials" };
   }
-  const isMatch = await bcrypt.compareSync(password, ADMIN_PASSWORD_HASH);
+  const isMatch = await bcrypt.compare(password, ADMIN_PASSWORD_HASH);
 
   if (isMatch) {
     const token = jwt.sign(
@@ -37,11 +40,12 @@ export async function loginAdmin(email, password) {
         id: "admin",
         email: ADMIN_EMAIL,
         role: "admin",
+        tenantId: getDefaultTenantId(),
         firstName: "Admin",
         lastName: "",
       },
       JWT_SECRET,
-      { expiresIn: "7d" },
+      { expiresIn: "2d" },
     );
     return { success: true, token };
   }

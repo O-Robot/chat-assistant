@@ -9,6 +9,7 @@ export const userApi = axios.create({
     "Content-Type": "application/json",
   },
   timeout: 30000,
+  withCredentials: true,
 });
 
 export const adminApi = axios.create({

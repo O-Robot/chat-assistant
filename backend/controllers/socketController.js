@@ -15,41 +15,45 @@ const pendingTransferRequests = new Map();
 
 export function handleSocketConnection(io, socket) {
   console.log(`Socket connected: ${socket.id}`);
+  const principal = socket.data.principal;
+  const tenantRoom = `tenant-${principal.tenantId}`;
+  socket.join(tenantRoom);
 
   // User joins
-  socket.on("user_join", async (userData) => {
+  socket.on("user_join", async () => {
     try {
-      const { id, firstName, lastName, email, role } = userData;
-
-      if (!id || !email) {
-        console.error("Invalid user data received");
-        return;
-      }
-
-      userSockets.set(socket.id, { ...userData, socketId: socket.id });
-      onlineUsers.set(id, socket.id);
-
-      console.log(`User ${firstName} ${lastName} (${role}) joined - ${id}`);
-
-      socket.join(`user-${id}`);
+      const db = await openDB();
+      const role = principal.role;
+      let userData = { ...principal, socketId: socket.id };
 
       if (role === "visitor") {
-        const db = await openDB();
+        const user = await db.get(
+          "SELECT id, firstName, lastName, email FROM users WHERE id = ? AND tenantId = ?",
+          [principal.id, principal.tenantId],
+        );
+        if (!user) return socket.disconnect(true);
+        userData = { ...userData, ...user };
+      }
 
+      userSockets.set(socket.id, userData);
+      onlineUsers.set(`${principal.tenantId}:${principal.id}`, socket.id);
+      socket.join(`user-${principal.tenantId}-${principal.id}`);
+
+      if (role === "visitor") {
         await db.run(
           `UPDATE conversations 
            SET status = 'closed', closedAt = CURRENT_TIMESTAMP 
-           WHERE userId = ? AND status = 'open' AND id NOT IN (
+           WHERE userId = ? AND tenantId = ? AND status = 'open' AND id NOT IN (
              SELECT id FROM conversations 
-             WHERE userId = ? AND status = 'open' 
+             WHERE userId = ? AND tenantId = ? AND status = 'open'
              ORDER BY createdAt DESC LIMIT 1
            )`,
-          [id, id],
+          [principal.id, principal.tenantId, principal.id, principal.tenantId],
         );
 
         const conversation = await db.get(
-          "SELECT * FROM conversations WHERE userId = ? AND status = 'open' ORDER BY createdAt DESC LIMIT 1",
-          [id],
+          "SELECT * FROM conversations WHERE userId = ? AND tenantId = ? AND status = 'open' ORDER BY createdAt DESC LIMIT 1",
+          [principal.id, principal.tenantId],
         );
 
         if (conversation) {
@@ -64,15 +68,15 @@ export function handleSocketConnection(io, socket) {
             messageCount.count === 0 &&
             !conversationAdminStatus.get(conversation.id)
           ) {
-            await sendWelcomeMessage(io, conversation.id, firstName);
+            await sendWelcomeMessage(io, conversation.id, userData.firstName);
           }
         }
       }
 
       if (role === "admin") {
-        const db = await openDB();
         const conversations = await db.all(
-          "SELECT * FROM conversations WHERE status = 'open'",
+          "SELECT * FROM conversations WHERE tenantId = ? AND status = 'open'",
+          [principal.tenantId],
         );
 
         conversations.forEach((conv) => {
@@ -80,51 +84,55 @@ export function handleSocketConnection(io, socket) {
         });
       }
 
-      io.emit("user_online", id);
+      io.to(tenantRoom).emit("user_online", principal.id);
 
       if (role === "admin") {
-        io.emit("user_online", "admin");
+        io.to(tenantRoom).emit("user_online", "admin");
       }
 
-      io.emit("user_online", "system");
+      io.to(tenantRoom).emit("user_online", "system");
 
-      const onlineUserIds = Array.from(onlineUsers.keys());
+      const onlineUserIds = Array.from(onlineUsers.keys())
+        .filter((key) => key.startsWith(`${principal.tenantId}:`))
+        .map((key) => key.slice(principal.tenantId.length + 1));
       socket.emit("users_online", onlineUserIds);
 
-      io.emit("users_online", onlineUserIds);
+      io.to(tenantRoom).emit("users_online", onlineUserIds);
     } catch (error) {
       console.error("Error in user_join:", error);
     }
   });
 
   // Send message
-  socket.on("send_message", async (message) => {
+  socket.on("send_message", async (message, acknowledge) => {
     try {
-      const { id, conversationId, senderId, content, timestamp } = message;
+      const { id, conversationId, content } = message || {};
 
-      if (!conversationId || !senderId || !content) {
-        console.error("Invalid message data");
+      if (!id || !conversationId || typeof content !== "string") {
+        acknowledge?.({ ok: false, error: "Invalid message" });
         return;
       }
 
       const sanitizedContent = sanitizeHTML(content);
 
       if (!sanitizedContent) {
-        console.error("Empty content after sanitization");
+        acknowledge?.({ ok: false, error: "Message is empty" });
         return;
       }
 
       const db = await openDB();
 
       const conversation = await db.get(
-        "SELECT status FROM conversations WHERE id = ?",
-        [conversationId],
+        "SELECT status, userId, tenantId FROM conversations WHERE id = ? AND tenantId = ?",
+        [conversationId, principal.tenantId],
       );
 
-      if (!conversation || conversation.status === "closed") {
-        console.log("Cannot send message to closed conversation");
+      if (!conversation || conversation.status === "closed" || (principal.role === "visitor" && conversation.userId !== principal.id)) {
+        acknowledge?.({ ok: false, error: "Conversation is unavailable" });
         return;
       }
+
+      const senderId = principal.role === "admin" ? "admin" : principal.id;
 
       // Check if admin is handling
       const isAdminHandled = conversationAdminStatus.get(conversationId);
@@ -137,7 +145,7 @@ export function handleSocketConnection(io, socket) {
           conversationId,
           senderId,
           sanitizedContent,
-          new Date(timestamp).toISOString(),
+          new Date().toISOString(),
         ],
       );
 
@@ -164,7 +172,10 @@ export function handleSocketConnection(io, socket) {
       }
 
       const messageWithSender = {
-        ...message,
+        id,
+        conversationId,
+        senderId,
+        timestamp: Date.now(),
         content: sanitizedContent,
         sender,
       };
@@ -172,11 +183,12 @@ export function handleSocketConnection(io, socket) {
         "receive_message",
         messageWithSender,
       );
+      acknowledge?.({ ok: true, message: messageWithSender });
       // ADMIN JOINS - Switch from AI to Human
       if (senderId === "admin" && !isAdminHandled) {
         await db.run(
-          "UPDATE conversations SET status = 'transferred' WHERE id = ?",
-          [conversationId],
+          "UPDATE conversations SET status = 'transferred' WHERE id = ? AND tenantId = ?",
+          [conversationId, principal.tenantId],
         );
 
         conversationAdminStatus.set(conversationId, true);
@@ -210,14 +222,14 @@ export function handleSocketConnection(io, socket) {
       if (pendingTransferRequests.has(conversationId)) {
         if (lowerContent === "yes" || lowerContent === "y") {
           await db.run(
-            "UPDATE conversations SET status = 'transferred' WHERE id = ?",
-            [conversationId],
+            "UPDATE conversations SET status = 'transferred' WHERE id = ? AND tenantId = ?",
+            [conversationId, principal.tenantId],
           );
 
           conversationAdminStatus.set(conversationId, true);
           pendingTransferRequests.delete(conversationId);
 
-          io.emit("system_offline_for_conversation", conversationId);
+          io.to(`conversation-${conversationId}`).emit("system_offline_for_conversation", conversationId);
 
           setTimeout(async () => {
             await sendSystemMessage(
@@ -226,9 +238,7 @@ export function handleSocketConnection(io, socket) {
               "Perfect! I'm connecting you to Ogooluwani now. He'll be with you shortly.",
             );
 
-            const user = await db.get("SELECT * FROM users WHERE id = ?", [
-              senderId,
-            ]);
+            const user = await db.get("SELECT * FROM users WHERE id = ? AND tenantId = ?", [senderId, principal.tenantId]);
             if (user) {
               notifyAdminNewChat(
                 `${user.firstName} ${user.lastName}`,
@@ -268,6 +278,7 @@ export function handleSocketConnection(io, socket) {
   //transfer request from ai
   socket.on("transfer_request", async ({ conversationId }) => {
     try {
+      if (principal.role !== "visitor" || !socket.rooms.has(`conversation-${conversationId}`)) return;
       pendingTransferRequests.set(conversationId, true);
 
       await sendSystemMessage(
@@ -283,7 +294,7 @@ export function handleSocketConnection(io, socket) {
   // Typing indicators - broadcast to EVERYONE
   socket.on("typing_start", (conversationId) => {
     const userData = userSockets.get(socket.id);
-    if (!userData || !conversationId) return;
+    if (!userData || !conversationId || !socket.rooms.has(`conversation-${conversationId}`)) return;
     io.to(`conversation-${conversationId}`).emit("user_typing", {
       id: userData.id,
       conversationId,
@@ -292,7 +303,7 @@ export function handleSocketConnection(io, socket) {
 
   socket.on("typing_stop", (conversationId) => {
     const userData = userSockets.get(socket.id);
-    if (!userData || !conversationId) return;
+    if (!userData || !conversationId || !socket.rooms.has(`conversation-${conversationId}`)) return;
     io.to(`conversation-${conversationId}`).emit("user_stopped_typing", {
       id: userData.id,
       conversationId,
@@ -304,9 +315,15 @@ export function handleSocketConnection(io, socket) {
     try {
       const db = await openDB();
 
+      const conversation = await db.get(
+        "SELECT userId FROM conversations WHERE id = ? AND tenantId = ?",
+        [conversationId, principal.tenantId],
+      );
+      if (!conversation || (principal.role === "visitor" && conversation.userId !== principal.id)) return;
+
       await db.run(
-        "UPDATE conversations SET status = 'closed', closedAt = CURRENT_TIMESTAMP WHERE id = ?",
-        [conversationId],
+        "UPDATE conversations SET status = 'closed', closedAt = CURRENT_TIMESTAMP WHERE id = ? AND tenantId = ?",
+        [conversationId, principal.tenantId],
       );
 
       conversationAdminStatus.delete(conversationId);
@@ -334,19 +351,20 @@ export function handleSocketConnection(io, socket) {
       );
 
       // Remove from maps
-      onlineUsers.delete(userData.id);
+      onlineUsers.delete(`${principal.tenantId}:${principal.id}`);
       userSockets.delete(socket.id);
 
-      // Broadcast offline status to EVERYONE
-      io.emit("user_offline", userData.id);
+      io.to(tenantRoom).emit("user_offline", principal.id);
 
       if (userData.role === "admin") {
-        io.emit("user_offline", "admin");
+        io.to(tenantRoom).emit("user_offline", "admin");
       }
 
       // Send updated online users list to everyone
-      const onlineUserIds = Array.from(onlineUsers.keys());
-      io.emit("users_online", onlineUserIds);
+      const onlineUserIds = Array.from(onlineUsers.keys())
+        .filter((key) => key.startsWith(`${principal.tenantId}:`))
+        .map((key) => key.slice(principal.tenantId.length + 1));
+      io.to(tenantRoom).emit("users_online", onlineUserIds);
     }
 
     console.log(`Socket disconnected: ${socket.id}`);

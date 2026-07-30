@@ -1,19 +1,31 @@
 import express from "express";
 import { v4 as uuidv4 } from "uuid";
 import { openDB } from "../db.js";
+import {
+  authenticateVisitor,
+  getDefaultTenantId,
+  setVisitorSession,
+  signVisitorSession,
+} from "../middleware/auth.js";
 
 const router = express.Router();
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", authenticateVisitor, async (req, res) => {
   try {
     const db = await openDB();
 
     const { id } = req.params;
+    if (req.principal.id !== id) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
     if (!id) {
       return res.status(400).json({ message: "User id is required" });
     }
 
-    const user = await db.get("SELECT * FROM users WHERE id = ?", [id]);
+    const user = await db.get(
+      "SELECT * FROM users WHERE id = ? AND tenantId = ?",
+      [id, req.principal.tenantId],
+    );
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -21,10 +33,10 @@ router.get("/:id", async (req, res) => {
 
     const conversation = await db.get(
       `SELECT * FROM conversations
-       WHERE userId = ? AND status = 'open'
+       WHERE userId = ? AND tenantId = ? AND status = 'open'
        ORDER BY createdAt DESC
        LIMIT 1`,
-      [user.id],
+      [user.id, req.principal.tenantId],
     );
 
     res.json({
@@ -52,19 +64,23 @@ router.post("/", async (req, res) => {
     }
 
     const db = await openDB();
+    const tenantId = getDefaultTenantId();
 
-    let user = await db.get("SELECT * FROM users WHERE email = ?", [email]);
+    let user = await db.get(
+      "SELECT * FROM users WHERE email = ? AND tenantId = ?",
+      [email, tenantId],
+    );
 
     if (!user) {
       const userId = uuidv4();
 
       await db.run(
-        `INSERT INTO users (id, firstName, lastName, email, phone, country)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [userId, firstName, lastName, email, phone, country],
+        `INSERT INTO users (id, firstName, lastName, email, phone, country, tenantId)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [userId, firstName, lastName, email, phone, country, tenantId],
       );
 
-      user = await db.get("SELECT * FROM users WHERE id = ?", [userId]);
+      user = await db.get("SELECT * FROM users WHERE id = ? AND tenantId = ?", [userId, tenantId]);
     }
 
     if (!user) {
@@ -76,17 +92,19 @@ router.post("/", async (req, res) => {
     await db.run(
       `UPDATE conversations
        SET status = 'closed', closedAt = CURRENT_TIMESTAMP
-       WHERE userId = ? AND status = 'open'`,
-      [user.id],
+       WHERE userId = ? AND tenantId = ? AND status = 'open'`,
+      [user.id, tenantId],
     );
 
     const conversationId = uuidv4();
 
     await db.run(
-      `INSERT INTO conversations (id, userId, status)
-       VALUES (?, ?, 'open')`,
-      [conversationId, user.id],
+      `INSERT INTO conversations (id, userId, status, tenantId)
+       VALUES (?, ?, 'open', ?)`,
+      [conversationId, user.id, tenantId],
     );
+
+    setVisitorSession(res, signVisitorSession(user));
 
     res.json({
       userId: user.id,

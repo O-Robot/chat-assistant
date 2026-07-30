@@ -18,16 +18,14 @@ router.post("/login", async (req, res) => {
       res.cookie("whoami", result.token, {
         httpOnly: true,
         secure: isProduction,
-        sameSite: isProduction ? "strict" : "lax",
+        sameSite: isProduction ? "none" : "lax",
         path: "/",
-        domain: isProduction ? ".ogooluwaniadewale.com" : undefined,
         maxAge: 2 * 24 * 60 * 60 * 1000,
       });
 
       return res.json({
         success: true,
         message: "Login successful",
-        token: result.token,
       });
     }
 
@@ -43,9 +41,8 @@ router.post("/logout", (req, res) => {
   res.clearCookie("whoami", {
     httpOnly: true,
     secure: isProduction,
-    sameSite: isProduction ? "strict" : "lax",
+    sameSite: isProduction ? "none" : "lax",
     path: "/",
-    domain: isProduction ? ".ogooluwaniadewale.com" : undefined,
   });
   res.json({ success: true, message: "Logged out" });
 });

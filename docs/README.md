@@ -11,7 +11,7 @@ This directory is the maintained starting point for understanding, developing, d
 - [Local setup](development/local-setup.md), [coding standards](development/coding-standards.md), and [folder structure](development/folder-structure.md).
 - [Design system](design/design-system.md) and [UI principles](design/ui-principles.md).
 - [Security overview](security/overview.md) and [security checklist](security/checklist.md).
-- [Project journal](PROJECT_JOURNAL.md) — chronological record of completed project phases.
+- [Project journal](project-journal.md) — chronological record of completed project phases.
 
 ## Documentation conventions
 
