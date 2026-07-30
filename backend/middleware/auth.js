@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { logger } from "../utils/logger.js";
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const VISITOR_COOKIE = "chat_session";
@@ -35,16 +36,21 @@ export function verifyToken(token) {
 
 export function authenticateVisitor(req, res, next) {
   const token = req.cookies?.[VISITOR_COOKIE];
-  if (!token) return res.status(401).json({ message: "Unauthorised" });
+  if (!token) {
+    logger.warn("visitor_auth_failed", { requestId: req.requestId, reason: "missing_session" });
+    return res.status(401).json({ message: "Unauthorised" });
+  }
 
   try {
     const principal = verifyToken(token);
     if (principal.role !== "visitor" || !principal.id || !principal.tenantId) {
+      logger.warn("visitor_permission_denied", { requestId: req.requestId, reason: "invalid_principal" });
       return res.status(403).json({ message: "Forbidden" });
     }
     req.principal = principal;
     next();
-  } catch {
+  } catch (error) {
+    logger.warn("visitor_auth_failed", { requestId: req.requestId, reason: error.name });
     return res.status(401).json({ message: "Invalid session" });
   }
 }

@@ -31,19 +31,25 @@ adminApi.interceptors.request.use(
 );
 
 const handleResponse = (response: any) => response;
+const getErrorMessage = (error: any) =>
+  error.response?.data?.error?.message ||
+  error.response?.data?.message ||
+  error.message ||
+  "Please try again.";
+
 const handleError = (error: any) => {
   if (error.response) {
-    console.error("API Error:", error.response.data);
+    console.error("API Error:", error.response.status, error.response.data?.error?.code);
     toast({
       title: "Error",
-      description: error.response.data || "Failed!!. Please try again.",
+      description: getErrorMessage(error),
       variant: "destructive",
     });
   } else if (error.request) {
     console.error("Network Error:", error.message);
     toast({
       title: "Error",
-      description: error.message || "Network Error!!. Please try again.",
+      description: getErrorMessage(error),
       variant: "destructive",
     });
   } else {

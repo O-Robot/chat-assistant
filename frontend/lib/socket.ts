@@ -112,6 +112,7 @@ export const initializeSocket = (config?: SocketConfig) => {
     socket.on("reconnect", (attemptNumber) => {
       Console.log(`✅ Reconnected after ${attemptNumber} attempts`);
       reconnectAttempts = 0;
+      useErrorStore.getState().setError(null);
 
       if (socketConfig.onReconnected) {
         socketConfig.onReconnected();

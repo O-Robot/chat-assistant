@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import { getDefaultTenantId, verifyToken } from "./auth.js";
+import { logger } from "../utils/logger.js";
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
@@ -10,17 +11,20 @@ export function authenticateAdmin(req, res, next) {
   const token = req.cookies?.whoami;
 
   if (!token) {
+    logger.warn("admin_auth_failed", { requestId: req.requestId, reason: "missing_session" });
     return res.status(401).json({ message: "Unauthorized" });
   }
 
   try {
     const decoded = verifyToken(token);
     if (decoded.role !== "admin" || !decoded.tenantId) {
+      logger.warn("admin_permission_denied", { requestId: req.requestId, reason: "invalid_principal" });
       return res.status(403).json({ message: "Forbidden" });
     }
     req.admin = decoded;
     next();
   } catch (error) {
+    logger.warn("admin_auth_failed", { requestId: req.requestId, reason: error.name });
     return res.status(401).json({ message: "Invalid token" });
   }
 }

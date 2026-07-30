@@ -8,6 +8,8 @@ import { handleAIResponse } from "../controllers/aiController.js";
 import { notifyAdminNewChat } from "../utils/email/email.js";
 import { sanitizeHTML } from "../utils/sanitize.js";
 import { getMessagesPage } from "../services/conversationService.js";
+import { recordAuditEvent } from "../utils/audit.js";
+import { logger } from "../utils/logger.js";
 
 const onlineUsers = new Map();
 const userSockets = new Map();
@@ -38,7 +40,7 @@ function clearTyping(io, conversationId, userId) {
 }
 
 export function handleSocketConnection(io, socket) {
-  console.log(`Socket connected: ${socket.id}`);
+  logger.info("socket_handler_started", { socketId: socket.id, tenantId: socket.data.principal.tenantId });
   const principal = socket.data.principal;
   const tenantRoom = `tenant-${principal.tenantId}`;
   socket.join(tenantRoom);
@@ -127,9 +129,17 @@ export function handleSocketConnection(io, socket) {
       socket.emit("users_online", onlineUserIds);
 
       io.to(tenantRoom).emit("users_online", onlineUserIds);
+      await recordAuditEvent(db, {
+        tenantId: principal.tenantId,
+        actorId: principal.id,
+        actorRole: principal.role,
+        action: "socket.joined",
+        resourceType: "socket",
+        resourceId: socket.id,
+      });
       acknowledge?.({ ok: true, onlineUserIds });
     } catch (error) {
-      console.error("Error in user_join:", error);
+      logger.error("socket_join_error", { socketId: socket.id, tenantId: principal.tenantId, errorName: error.name, errorMessage: error.message });
       acknowledge?.({ ok: false, error: "Unable to join chat" });
     }
   });
@@ -186,7 +196,16 @@ export function handleSocketConnection(io, socket) {
         return;
       }
 
-      console.log(`Message saved: ${id} in conversation ${conversationId}`);
+      logger.info("message_persisted", { tenantId: principal.tenantId, conversationId, messageId: id, senderId });
+      await recordAuditEvent(db, {
+        tenantId: principal.tenantId,
+        actorId: principal.id,
+        actorRole: principal.role,
+        action: "message.sent",
+        resourceType: "message",
+        resourceId: id,
+        metadata: { conversationId },
+      });
 
       // Get sender info
       let sender = null;
@@ -308,7 +327,7 @@ export function handleSocketConnection(io, socket) {
         }, 800);
       }
     } catch (error) {
-      console.error("Error in send_message:", error);
+      logger.error("socket_message_error", { socketId: socket.id, tenantId: principal.tenantId, errorName: error.name, errorMessage: error.message });
       acknowledge?.({ ok: false, error: "Unable to send message" });
     }
   });
@@ -338,7 +357,7 @@ export function handleSocketConnection(io, socket) {
       const page = await getMessagesPage(db, { conversationId, before, limit });
       acknowledge?.({ ok: true, ...page });
     } catch (error) {
-      console.error("Error syncing conversation:", error);
+      logger.error("socket_sync_error", { socketId: socket.id, tenantId: principal.tenantId, errorName: error.name, errorMessage: error.message });
       acknowledge?.({ ok: false, error: "Unable to sync messages" });
     }
   });
@@ -362,6 +381,15 @@ export function handleSocketConnection(io, socket) {
            lastReadMessageId = excluded.lastReadMessageId, readAt = CURRENT_TIMESTAMP`,
         [conversationId, principal.tenantId, readerId, messageId],
       );
+      await recordAuditEvent(db, {
+        tenantId: principal.tenantId,
+        actorId: principal.id,
+        actorRole: principal.role,
+        action: "conversation.read",
+        resourceType: "conversation",
+        resourceId: conversationId,
+        metadata: { messageId },
+      });
       io.to(`conversation-${conversationId}`).emit("conversation_read", {
         conversationId,
         readerId,
@@ -369,7 +397,7 @@ export function handleSocketConnection(io, socket) {
       });
       acknowledge?.({ ok: true });
     } catch (error) {
-      console.error("Error marking conversation read:", error);
+      logger.error("socket_read_error", { socketId: socket.id, tenantId: principal.tenantId, errorName: error.name, errorMessage: error.message });
       acknowledge?.({ ok: false, error: "Unable to update read state" });
     }
   });
@@ -412,6 +440,14 @@ export function handleSocketConnection(io, socket) {
         "UPDATE conversations SET status = 'closed', closedAt = CURRENT_TIMESTAMP WHERE id = ? AND tenantId = ?",
         [conversationId, principal.tenantId],
       );
+      await recordAuditEvent(db, {
+        tenantId: principal.tenantId,
+        actorId: principal.id,
+        actorRole: principal.role,
+        action: "conversation.closed",
+        resourceType: "conversation",
+        resourceId: conversationId,
+      });
 
       conversationAdminStatus.delete(conversationId);
       pendingTransferRequests.delete(conversationId);
@@ -422,9 +458,9 @@ export function handleSocketConnection(io, socket) {
         conversationId,
       );
 
-      console.log(`Conversation closed: ${conversationId}`);
+      logger.info("conversation_closed", { tenantId: principal.tenantId, conversationId, actorId: principal.id });
     } catch (error) {
-      console.error("Error closing conversation:", error);
+      logger.error("socket_close_error", { socketId: socket.id, tenantId: principal.tenantId, errorName: error.name, errorMessage: error.message });
     }
   });
 
@@ -433,9 +469,7 @@ export function handleSocketConnection(io, socket) {
     const userData = userSockets.get(socket.id);
 
     if (userData) {
-      console.log(
-        `User ${userData.firstName} ${userData.lastName} disconnected`,
-      );
+      logger.info("socket_disconnecting", { socketId: socket.id, tenantId: principal.tenantId, actorId: principal.id });
 
       // Remove from maps
       const key = presenceKey(principal);
@@ -460,7 +494,7 @@ export function handleSocketConnection(io, socket) {
       io.to(tenantRoom).emit("users_online", onlineUserIds);
     }
 
-    console.log(`Socket disconnected: ${socket.id}`);
+    logger.info("socket_disconnected", { socketId: socket.id, tenantId: principal.tenantId, actorId: principal.id });
   });
 }
 

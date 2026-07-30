@@ -2,6 +2,7 @@ import { Router } from "express";
 import { openDB } from "../db.js";
 import { authenticateAdmin } from "../middleware/adminAuth.js";
 import { sendEmail, exportConversation } from "../utils/email/email.js";
+import { recordAuditEvent } from "../utils/audit.js";
 
 const router = Router();
 
@@ -61,6 +62,14 @@ router.put("/users/:id", async (req, res) => {
     );
 
     const updatedUser = await db.get("SELECT * FROM users WHERE id = ? AND tenantId = ?", [id, req.admin.tenantId]);
+    await recordAuditEvent(db, {
+      tenantId: req.admin.tenantId,
+      actorId: req.admin.id,
+      actorRole: req.admin.role,
+      action: "admin.user.updated",
+      resourceType: "user",
+      resourceId: id,
+    });
     res.json(updatedUser);
   } catch (error) {
     console.error("Error updating user:", error);
@@ -156,6 +165,14 @@ router.post("/conversations/:id/export", async (req, res) => {
     const db = await openDB();
     const conversation = await db.get("SELECT id FROM conversations WHERE id = ? AND tenantId = ?", [id, req.admin.tenantId]);
     if (!conversation) return res.status(404).json({ error: "Conversation not found" });
+    await recordAuditEvent(db, {
+      tenantId: req.admin.tenantId,
+      actorId: req.admin.id,
+      actorRole: req.admin.role,
+      action: "admin.conversation.exported",
+      resourceType: "conversation",
+      resourceId: id,
+    });
     await exportConversation(id, email, res, req.admin.tenantId);
   } catch (error) {
     console.error("Error exporting conversation:", error);
@@ -174,6 +191,14 @@ router.post("/conversations/:id/export/:email", async (req, res) => {
     const db = await openDB();
     const conversation = await db.get("SELECT id FROM conversations WHERE id = ? AND tenantId = ?", [id, req.admin.tenantId]);
     if (!conversation) return res.status(404).json({ error: "Conversation not found" });
+    await recordAuditEvent(db, {
+      tenantId: req.admin.tenantId,
+      actorId: req.admin.id,
+      actorRole: req.admin.role,
+      action: "admin.conversation.exported",
+      resourceType: "conversation",
+      resourceId: id,
+    });
     await exportConversation(id, email, res, req.admin.tenantId);
   } catch (error) {
     console.error("Error exporting conversation:", error);

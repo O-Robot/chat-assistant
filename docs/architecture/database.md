@@ -14,6 +14,7 @@ The backend opens SQLite through `backend/db.js`. The database path is `DB_PATH`
 | `conversations` | A visitor conversation, status, creation and close time. |
 | `messages` | Conversation message content, sender ID, and timestamp. |
 | `conversation_reads` | Per-principal last-read message and timestamp for a conversation. |
+| `audit_events` | Tenant-scoped immutable record of security-sensitive actions. |
 
 `conversations.userId` references `users.id`; `messages.conversationId` references `conversations.id`. UUID strings are used as primary IDs.
 

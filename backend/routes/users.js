@@ -7,6 +7,7 @@ import {
   setVisitorSession,
   signVisitorSession,
 } from "../middleware/auth.js";
+import { recordAuditEvent } from "../utils/audit.js";
 
 const router = express.Router();
 
@@ -105,6 +106,14 @@ router.post("/", async (req, res) => {
     );
 
     setVisitorSession(res, signVisitorSession(user));
+    await recordAuditEvent(db, {
+      tenantId,
+      actorId: user.id,
+      actorRole: "visitor",
+      action: "visitor.session.created",
+      resourceType: "conversation",
+      resourceId: conversationId,
+    });
 
     res.json({
       userId: user.id,

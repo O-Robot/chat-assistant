@@ -9,6 +9,7 @@ This document is a chronological development log for the project. Append each co
 | 003   | 2026-08-02 | 🚧 In Progress | Pending                                                                     |
 | P001  | 2026-07-30 | ✅ Completed   | `feat(security): harden tenant-scoped sessions and Socket.IO authorisation` |
 | P002  | 2026-07-30 | ✅ Completed   | `feat(realtime): harden message delivery and conversation state`            |
+| P003  | 2026-07-30 | ✅ Completed   | `feat(ops): add observability and audit foundations`                         |
 
 <details>
 <summary><strong>Phase 001 — Authentication Hardening</strong></summary>
@@ -199,6 +200,70 @@ P002 — Realtime Reliability & Conversation Integrity.
 
 ```text
 feat(security): harden tenant-scoped sessions and Socket.IO authorisation
+```
+
+</details>
+
+<details>
+<summary><strong>P003 — Production Readiness &amp; Observability</strong></summary>
+
+### Objective
+
+Establish focused production operational foundations for structured logging, error handling, service health, audit history, and recovery guidance.
+
+### Work Completed
+
+- Added structured JSON backend logs for HTTP requests, authentication/permission failures, socket lifecycle/events, and unhandled errors.
+- Added request IDs returned as `X-Request-Id` and standardised unhandled HTTP error responses.
+- Added `GET /health` liveness and `GET /ready` database-readiness endpoints.
+- Added tenant-scoped `audit_events` storage and event recording for sessions, admin actions, conversation lifecycle/read actions, message sends, and socket joins.
+- Added frontend route and global error boundaries plus clearer HTTP/socket recovery messages.
+- Added deployment, monitoring, backup, recovery, and incident-response documentation.
+
+### Files Changed
+
+- `backend/utils/logger.js`
+- `backend/utils/audit.js`
+- `backend/db.js`
+- `backend/server.js`
+- `backend/routes/index.js`
+- `backend/middleware/auth.js`
+- `backend/middleware/adminAuth.js`
+- `backend/routes/adminAuth.js`
+- `backend/routes/users.js`
+- `backend/routes/conversations.js`
+- `backend/routes/admin.js`
+- `backend/controllers/socketController.js`
+- `frontend/app/error.tsx`
+- `frontend/app/global-error.tsx`
+- `frontend/lib/axios.ts`
+- `frontend/lib/socket.ts`
+- `docs/operations/deployment.md`
+- `docs/architecture/backend.md`
+- `docs/architecture/database.md`
+
+### Verification Steps
+
+- Ran `node --check` for changed backend modules.
+- Ran `npx tsc --noEmit --project frontend/tsconfig.json` successfully.
+- Used an isolated temporary SQLite backend to verify `GET /health` and `GET /ready` return `200`, health responses include `X-Request-Id`, and visitor-session creation writes an audit event.
+- Confirmed structured JSON request and audit logs include safe operational identifiers without request bodies or credentials.
+- Ran `npm run build --workspace=frontend` successfully. Frontend lint still fails on four pre-existing unescaped-apostrophe JSX errors and existing warnings; TODO: resolve these before making lint a release gate.
+
+### Remaining Risks
+
+- Structured logs are stdout-only; external aggregation, retention, alerts, and metrics export remain deployment work.
+- Audit events are a foundation, not a complete compliance/audit programme.
+- SQLite backup and recovery are documented but not automated.
+
+### Next Phase
+
+P004 — Not started.
+
+### Suggested Conventional Commit
+
+```text
+feat(ops): add observability and audit foundations
 ```
 
 </details>

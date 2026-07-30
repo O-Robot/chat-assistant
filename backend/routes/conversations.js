@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import { exportUserTranscript } from "../utils/email/email.js";
 import { authenticateVisitor } from "../middleware/auth.js";
 import { getMessagesPage } from "../services/conversationService.js";
+import { recordAuditEvent } from "../utils/audit.js";
 
 const router = express.Router();
 
@@ -69,6 +70,14 @@ router.post("/new", authenticateVisitor, async (req, res) => {
     // Create new conversation
     const conversationId = uuidv4();
     await db.run("INSERT INTO conversations (id, userId, status, tenantId) VALUES (?, ?, 'open', ?)", [conversationId, userId, tenantId]);
+    await recordAuditEvent(db, {
+      tenantId,
+      actorId: userId,
+      actorRole: "visitor",
+      action: "conversation.created",
+      resourceType: "conversation",
+      resourceId: conversationId,
+    });
 
     res.json({ conversationId });
   } catch (error) {
@@ -135,6 +144,14 @@ router.post("/:id/close", authenticateVisitor, async (req, res) => {
     if (result.changes === 0) {
       return res.status(404).json({ error: "Conversation not found" });
     }
+    await recordAuditEvent(db, {
+      tenantId: req.principal.tenantId,
+      actorId: req.principal.id,
+      actorRole: "visitor",
+      action: "conversation.closed",
+      resourceType: "conversation",
+      resourceId: req.params.id,
+    });
 
     res.json({ success: true, message: "Conversation closed" });
   } catch (error) {

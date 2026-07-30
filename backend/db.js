@@ -109,5 +109,23 @@ export async function openDB() {
     CREATE INDEX IF NOT EXISTS idx_conversation_reads_tenant ON conversation_reads(tenantId, readerId, readAt DESC);
   `);
 
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id TEXT PRIMARY KEY,
+      tenantId TEXT NOT NULL,
+      actorId TEXT,
+      actorRole TEXT,
+      action TEXT NOT NULL,
+      resourceType TEXT,
+      resourceId TEXT,
+      metadata TEXT,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_events_tenant_created
+      ON audit_events(tenantId, createdAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_resource
+      ON audit_events(resourceType, resourceId, createdAt DESC);
+  `);
+
   return db;
 }
