@@ -39,6 +39,10 @@ function clearTyping(io, conversationId, userId) {
   });
 }
 
+function respond(acknowledge, payload) {
+  if (typeof acknowledge === "function") acknowledge(payload);
+}
+
 export function handleSocketConnection(io, socket) {
   logger.info("socket_handler_started", { socketId: socket.id, tenantId: socket.data.principal.tenantId });
   const principal = socket.data.principal;
@@ -46,7 +50,15 @@ export function handleSocketConnection(io, socket) {
   socket.join(tenantRoom);
 
   // User joins
-  socket.on("user_join", async (acknowledge) => {
+  socket.on("user_join", async (payloadOrAcknowledge, acknowledgementMaybe) => {
+    // The client historically sent a join payload. The authenticated server no
+    // longer reads it, but accepting it keeps the event backwards-compatible.
+    const acknowledge =
+      typeof payloadOrAcknowledge === "function"
+        ? payloadOrAcknowledge
+        : typeof acknowledgementMaybe === "function"
+          ? acknowledgementMaybe
+          : undefined;
     try {
       const db = await openDB();
       const role = principal.role;
@@ -137,10 +149,10 @@ export function handleSocketConnection(io, socket) {
         resourceType: "socket",
         resourceId: socket.id,
       });
-      acknowledge?.({ ok: true, onlineUserIds });
+      respond(acknowledge, { ok: true, onlineUserIds });
     } catch (error) {
       logger.error("socket_join_error", { socketId: socket.id, tenantId: principal.tenantId, errorName: error.name, errorMessage: error.message });
-      acknowledge?.({ ok: false, error: "Unable to join chat" });
+      respond(acknowledge, { ok: false, error: "Unable to join chat" });
     }
   });
 
@@ -150,14 +162,14 @@ export function handleSocketConnection(io, socket) {
       const { id, conversationId, content } = message || {};
 
       if (!id || !conversationId || typeof content !== "string") {
-        acknowledge?.({ ok: false, error: "Invalid message" });
+        respond(acknowledge, { ok: false, error: "Invalid message" });
         return;
       }
 
       const sanitizedContent = sanitizeHTML(content);
 
       if (!sanitizedContent) {
-        acknowledge?.({ ok: false, error: "Message is empty" });
+        respond(acknowledge, { ok: false, error: "Message is empty" });
         return;
       }
 
@@ -169,7 +181,7 @@ export function handleSocketConnection(io, socket) {
       );
 
       if (!conversation || conversation.status === "closed" || (principal.role === "visitor" && conversation.userId !== principal.id)) {
-        acknowledge?.({ ok: false, error: "Conversation is unavailable" });
+        respond(acknowledge, { ok: false, error: "Conversation is unavailable" });
         return;
       }
 
@@ -199,7 +211,7 @@ export function handleSocketConnection(io, socket) {
           [id, conversationId],
         );
         if (!existing) throw error;
-        acknowledge?.({ ok: true, message: { ...existing, timestamp: new Date(existing.timestamp).getTime() } });
+        respond(acknowledge, { ok: true, message: { ...existing, timestamp: new Date(existing.timestamp).getTime() } });
         return;
       }
 
@@ -246,7 +258,7 @@ export function handleSocketConnection(io, socket) {
         "receive_message",
         messageWithSender,
       );
-      acknowledge?.({ ok: true, message: messageWithSender });
+      respond(acknowledge, { ok: true, message: messageWithSender });
       // ADMIN JOINS - Switch from AI to Human
       if (senderId === "admin" && !isAdminHandled) {
         await db.run(
@@ -335,7 +347,7 @@ export function handleSocketConnection(io, socket) {
       }
     } catch (error) {
       logger.error("socket_message_error", { socketId: socket.id, tenantId: principal.tenantId, errorName: error.name, errorMessage: error.message });
-      acknowledge?.({ ok: false, error: "Unable to send message" });
+      respond(acknowledge, { ok: false, error: "Unable to send message" });
     }
   });
 
@@ -358,7 +370,7 @@ export function handleSocketConnection(io, socket) {
   socket.on("sync_conversation", async ({ conversationId, before, limit } = {}, acknowledge) => {
     try {
       if (!conversationId || !socket.rooms.has(`conversation-${conversationId}`)) {
-        return acknowledge?.({ ok: false, error: "Conversation is unavailable" });
+        return respond(acknowledge, { ok: false, error: "Conversation is unavailable" });
       }
       const db = await openDB();
       const page = await getMessagesPage(db, {
@@ -367,24 +379,24 @@ export function handleSocketConnection(io, socket) {
         before,
         limit,
       });
-      acknowledge?.({ ok: true, ...page });
+      respond(acknowledge, { ok: true, ...page });
     } catch (error) {
       logger.error("socket_sync_error", { socketId: socket.id, tenantId: principal.tenantId, errorName: error.name, errorMessage: error.message });
-      acknowledge?.({ ok: false, error: "Unable to sync messages" });
+      respond(acknowledge, { ok: false, error: "Unable to sync messages" });
     }
   });
 
   socket.on("mark_read", async ({ conversationId, messageId } = {}, acknowledge) => {
     try {
       if (!conversationId || !messageId || !socket.rooms.has(`conversation-${conversationId}`)) {
-        return acknowledge?.({ ok: false, error: "Conversation is unavailable" });
+        return respond(acknowledge, { ok: false, error: "Conversation is unavailable" });
       }
       const db = await openDB();
       const message = await db.get(
         "SELECT id FROM messages WHERE id = ? AND conversationId = ?",
         [messageId, conversationId],
       );
-      if (!message) return acknowledge?.({ ok: false, error: "Message not found" });
+      if (!message) return respond(acknowledge, { ok: false, error: "Message not found" });
       const readerId = principal.role === "admin" ? "admin" : principal.id;
       await db.run(
         `INSERT INTO conversation_reads (conversationId, tenantId, readerId, lastReadMessageId, readAt)
@@ -407,10 +419,10 @@ export function handleSocketConnection(io, socket) {
         readerId,
         messageId,
       });
-      acknowledge?.({ ok: true });
+      respond(acknowledge, { ok: true });
     } catch (error) {
       logger.error("socket_read_error", { socketId: socket.id, tenantId: principal.tenantId, errorName: error.name, errorMessage: error.message });
-      acknowledge?.({ ok: false, error: "Unable to update read state" });
+      respond(acknowledge, { ok: false, error: "Unable to update read state" });
     }
   });
 

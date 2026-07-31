@@ -10,6 +10,7 @@ This document is a chronological development log for completed project phases.
 | P002 | 2026-07-30 | ✅ Completed | `feat(realtime): harden message delivery and conversation state` |
 | P003 | 2026-07-30 | ✅ Completed | `feat(ops): add observability and audit foundations` |
 | P004 | 2026-07-31 | ✅ Completed | `feat(data): add scalable storage foundations` |
+| P005 | 2026-07-31 | ✅ Completed | `feat(visitor): polish widget experience and conversation history` |
 
 <details>
 <summary><strong>P001 — Security Hardening Foundation</strong></summary>
@@ -132,12 +133,57 @@ Prepare the data layer for production growth without changing the product experi
 
 ### Next Phase
 
-P005 — Not started.
+P006 — Not started.
 
 ### Suggested Conventional Commit
 
 ```text
 feat(data): add scalable storage foundations
+```
+
+</details>
+
+<details>
+<summary><strong>P005 — Visitor Experience &amp; Widget UX</strong></summary>
+
+### Objective
+
+Improve the visitor journey from widget launch through conversation completion, with a focused premium-quality pass over hierarchy, responsiveness, feedback, accessibility, and message-history usability.
+
+### Work Completed
+
+- Reworked the embedded widget shell to use its full iframe viewport, with clearer onboarding hierarchy, calmer visual weight, stronger status feedback, and responsive host sizing.
+- Improved first-run and empty states, loading copy, connection feedback, composer focus treatment, message bubbles, status labels, and keyboard-focus visibility.
+- Added accessible labels to visitor controls, the message region, the iframe, and attachment preparation affordances.
+- Added reduced-motion support and improved touch/focus interaction treatment.
+- Exposed existing cursor pagination through “Load earlier messages” controls in both visitor chat surfaces, preserving scroll position while earlier history is inserted.
+- Added graceful retained-history messaging when a refresh fails, without changing visitor authentication or backend behaviour.
+- Added visual-only attachment affordances marked as unavailable until a secure attachment capability is delivered.
+- Corrected stale connection-status presentation when the shared socket connected before the visitor store attached its listeners.
+- Hardened visitor message rendering against incomplete persisted or realtime message objects so a malformed event cannot trip the route error boundary.
+- Configured the existing DiceBear avatar source for Next image rendering, preventing a valid visitor avatar from triggering the route error boundary after message sends.
+- Made the authenticated Socket.IO join event tolerate its legacy client payload and only invoke acknowledgement callbacks when they are functions, preventing an invalid join acknowledgement from crashing the backend.
+
+### Verification Steps
+
+- Ran TypeScript validation and the frontend production build successfully.
+- Ran frontend lint successfully and checked the working-tree diff for whitespace errors.
+- TODO: complete manual embedded-host checks at mobile, tablet, and desktop widths before release.
+
+### Remaining Risks
+
+- Cross-site iframe cookie behaviour and embed `postMessage` origin validation remain security/platform work and are outside this visual phase.
+- Attachments are visual preparation only; no upload, storage, scanning, or lifecycle handling is available.
+- The two visitor surfaces still duplicate some interaction code and should be consolidated only in a future, scoped maintainability phase.
+
+### Next Phase
+
+P006 — Not started.
+
+### Suggested Conventional Commit
+
+```text
+feat(visitor): polish widget experience and conversation history
 ```
 
 </details>

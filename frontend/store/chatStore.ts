@@ -24,6 +24,7 @@ interface ChatState {
   isReconnecting: boolean;
   reconnectAttempt: number;
   connectionStatus: "connected" | "disconnected" | "reconnecting";
+  hasConnectedOnce: boolean;
 
   startTyping: (userId: string) => void;
   stopTyping: (userId: string) => void;
@@ -131,8 +132,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isReconnecting: false,
   reconnectAttempt: 0,
   connectionStatus: "disconnected",
+  hasConnectedOnce: false,
 
-  setConnectionStatus: (status) => set({ connectionStatus: status }),
+  setConnectionStatus: (status) =>
+    set((state) => ({
+      connectionStatus: status,
+      hasConnectedOnce: state.hasConnectedOnce || status === "connected",
+    })),
 
   setReconnecting: (isReconnecting, attempt = 0) =>
     set({ isReconnecting, reconnectAttempt: attempt }),
@@ -200,6 +206,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         get().setConnectionStatus("disconnected");
       },
     });
+
+    // The root layout may have established the singleton before this store
+    // attached its lifecycle listeners. Reflect that state immediately so the
+    // offline banner never represents a healthy, active connection as lost.
+    if (socket.connected) {
+      get().setConnectionStatus("connected");
+    }
 
     if (listenersInitialised) return;
     listenersInitialised = true;

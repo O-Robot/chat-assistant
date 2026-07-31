@@ -1,30 +1,22 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useChatStore } from "@/store/chatStore";
-import { Visitor, Message, UserRole, Status } from "@/types";
-import { Input } from "../ui/input";
-import { Button } from "../ui/button";
-import PhoneInput from "react-phone-input-2";
-import "react-phone-input-2/lib/bootstrap.css";
+import { useConfirmationModal } from "@/hooks/use-modal";
+import { useToast } from "@/hooks/use-toast";
+import { useSocketConnection } from "@/hooks/useSocketConnection";
+import { userApi } from "@/lib/axios";
+import { sanitizedContent } from "@/lib/constants";
 import {
-  ArrowUp,
-  EllipsisVertical,
-  LogOut,
-  RotateCcw,
-  Send,
-  Loader2,
-  Minimize,
-} from "lucide-react";
-import {
-  setUserCookie,
-  setConversationCookie,
-  getUserCookie,
   getConversationCookie,
-  removeUserCookie,
+  getUserCookie,
   removeConversationCookie,
+  removeUserCookie,
+  setConversationCookie,
+  setUserCookie,
 } from "@/lib/cookies";
-import { DarkModeToggle } from "../shared/DarkModeToggle";
+import { getSocket } from "@/lib/socket";
+import { useChatStore } from "@/store/chatStore";
+import { Message, Status, UserRole, Visitor } from "@/types";
 import {
   Menu,
   MenuButton,
@@ -32,17 +24,26 @@ import {
   MenuItems,
   Transition,
 } from "@headlessui/react";
+import {
+  ArrowUp,
+  EllipsisVertical,
+  Loader2,
+  LogOut,
+  Minimize,
+  RotateCcw,
+  Send,
+} from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
-import { useToast } from "@/hooks/use-toast";
-import { getSocket } from "@/lib/socket";
-import { userApi } from "@/lib/axios";
-import { useConfirmationModal } from "@/hooks/use-modal";
+import { useEffect, useRef, useState } from "react";
+import PhoneInput from "react-phone-input-2";
+import "react-phone-input-2/lib/bootstrap.css";
 import { ConfirmationModal } from "../shared/ConfirmationModal";
-import { sanitizedContent } from "@/lib/constants";
-import { useSocketConnection } from "@/hooks/useSocketConnection";
+import { DarkModeToggle } from "../shared/DarkModeToggle";
 import { ReconnectionIndicator } from "../shared/ReconnectionIndicator";
+import { Button } from "../ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Input } from "../ui/input";
 
 interface FullChatWindowProps {
   initialQuestion?: string;
@@ -82,6 +83,9 @@ export function FullChatWindow({
   const [isSubmittingForm, setIsSubmittingForm] = useState(false);
   const [isFocus, setFocus] = useState(false);
   const [conversationClosed, setConversationClosed] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -91,6 +95,8 @@ export function FullChatWindow({
   });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesListRef = useRef<HTMLDivElement>(null);
+  const preserveScrollPositionRef = useRef(false);
 
   const typingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -99,7 +105,14 @@ export function FullChatWindow({
 
   //? scroll to bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (preserveScrollPositionRef.current) {
+      preserveScrollPositionRef.current = false;
+      return;
+    }
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+    });
   }, [messages, typingUsers]);
 
   // Initialize socket listeners once
@@ -149,6 +162,7 @@ export function FullChatWindow({
 
       // Load from local storage first
       loadMessagesFromLocalStorage(conversationId);
+      setUser(userCookie);
 
       // Then fetch from server and update
       try {
@@ -159,7 +173,8 @@ export function FullChatWindow({
 
         clearMessages();
         msgs.forEach(receiveMessage);
-        setUser(userCookie);
+        setNextCursor(response.data.nextCursor || null);
+        setLoadError(null);
         setLoadingMessages(false);
         msgs.forEach((msg) => {
           receiveMessage(msg);
@@ -175,6 +190,9 @@ export function FullChatWindow({
         }, 1000);
       } catch (error) {
         console.error("Error loading messages:", error);
+        setLoadError(
+          "We could not refresh this conversation. Your saved messages are still available.",
+        );
       } finally {
         setLoadingMessages(false);
       }
@@ -182,6 +200,42 @@ export function FullChatWindow({
 
     loadData();
   }, []);
+
+  const loadOlderMessages = async () => {
+    const conversationId = getConversationCookie();
+    if (!conversationId || !nextCursor || isLoadingOlder) return;
+
+    const list = messagesListRef.current;
+    const previousHeight = list?.scrollHeight || 0;
+    const previousTop = list?.scrollTop || 0;
+    preserveScrollPositionRef.current = true;
+    setIsLoadingOlder(true);
+
+    try {
+      const response = await userApi.get(
+        `/api/conversations/${conversationId}/messages/`,
+        {
+          params: { before: nextCursor, limit: 50 },
+        },
+      );
+      const olderMessages: Message[] = response.data.messages || [];
+      olderMessages.forEach(receiveMessage);
+      setNextCursor(response.data.nextCursor || null);
+      requestAnimationFrame(() => {
+        if (list)
+          list.scrollTop = previousTop + (list.scrollHeight - previousHeight);
+      });
+    } catch (error) {
+      console.error("Error loading older messages:", error);
+      toast({
+        title: "Couldn’t load earlier messages",
+        description: "Check your connection and try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingOlder(false);
+    }
+  };
 
   // Socket listeners for typing
   useEffect(() => {
@@ -462,6 +516,8 @@ export function FullChatWindow({
       clearMessages();
       setConversationCookie(data.conversationId);
       setConversationClosed(false);
+      setNextCursor(null);
+      setLoadError(null);
       setFocus(false);
 
       // Re-initialise socket listeners for the new conversation
@@ -510,7 +566,7 @@ export function FullChatWindow({
         <Card className="glass-morphism shadow-xl border-white/20">
           <CardHeader>
             <CardTitle className="text-primary-text flex items-center justify-center gap-2">
-              Let's get to know you 👋
+              Let&apos;s get to know you 👋
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -590,8 +646,10 @@ export function FullChatWindow({
     <div className="flex flex-col h-full w-full">
       <ReconnectionIndicator />
       <div className="flex justify-between items-center p-4 border-b border-primary-text/20">
-        <div
-          className="flex items-center gap-2 cursor-pointer"
+        <button
+          type="button"
+          aria-label="Return to portfolio"
+          className="flex items-center gap-2 rounded-lg p-1 transition hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-primary"
           onClick={() => router.push("https://ogooluwaniadewale.com/home")}
         >
           <Image
@@ -601,11 +659,13 @@ export function FullChatWindow({
             width={32}
             height={32}
           />
-        </div>
+        </button>
 
         {/* Name and status */}
         <div className="flex flex-col items-center">
-          <span className="font-medium text-skill-text">Ogooluwani's Chat</span>
+          <span className="font-medium text-skill-text">
+            Ogooluwani&apos;s Chat
+          </span>
           <span className="text-xs text-gray-500">
             <span className="text-xs text-gray-500">
               {isSystemOnline ? (
@@ -632,6 +692,7 @@ export function FullChatWindow({
         <div className="flex">
           {process.env.NEXT_PUBLIC_PORTFOLIO_URL && (
             <button
+              aria-label="Return to portfolio"
               onClick={() =>
                 router.push(
                   process.env.NEXT_PUBLIC_PORTFOLIO_URL + "/home" || "",
@@ -644,7 +705,10 @@ export function FullChatWindow({
           )}
           <DarkModeToggle />
           <Menu as="div" className="relative">
-            <MenuButton className="p-2 text-primary-text cursor-pointer rounded-lg">
+            <MenuButton
+              aria-label="Conversation options"
+              className="p-2 text-primary-text cursor-pointer rounded-lg focus-visible:outline-2 focus-visible:outline-primary"
+            >
               <EllipsisVertical size={20} />
             </MenuButton>
             <Transition
@@ -702,20 +766,61 @@ export function FullChatWindow({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      <div
+        ref={messagesListRef}
+        className="flex-1 overflow-y-auto overscroll-contain p-4"
+        aria-label="Conversation messages"
+      >
         {isLoadingMessages ? (
           <div className="flex items-center justify-center h-full">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div className="flex flex-col items-center gap-3 text-center text-sm text-secondary-text">
+              <Loader2 className="h-7 w-7 animate-spin text-primary" />
+              <span>Loading your conversation…</span>
+            </div>
           </div>
         ) : (
           <>
-            {messages.map((msg, i) => {
+            {loadError && (
+              <div
+                role="status"
+                className="mb-4 rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100"
+              >
+                {loadError}
+              </div>
+            )}
+            {nextCursor && (
+              <div className="mb-5 flex justify-center">
+                <button
+                  onClick={loadOlderMessages}
+                  disabled={isLoadingOlder}
+                  className="rounded-full border border-primary/20 bg-white/70 px-3 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/10 disabled:cursor-wait disabled:opacity-60 dark:bg-white/5"
+                >
+                  {isLoadingOlder
+                    ? "Loading earlier messages…"
+                    : "Load earlier messages"}
+                </button>
+              </div>
+            )}
+            {messages.length === 0 && !loadError && (
+              <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+                <div className="mb-3 rounded-2xl bg-primary/10 p-3 text-primary">
+                  <Send size={20} />
+                </div>
+                <p className="font-medium text-primary-text">
+                  Your conversation starts here
+                </p>
+                <p className="mt-1 text-sm text-secondary-text">
+                  Ask about a project, a service, or an idea you’re exploring.
+                </p>
+              </div>
+            )}
+            {messages.filter(Boolean).map((msg) => {
               const isUserMessage =
-                msg?.sender?.id === user.id || msg?.senderId === user.id;
+                msg?.sender?.id === user?.id || msg?.senderId === user?.id;
 
               return (
                 <div
-                  key={i}
+                  key={msg.id}
                   className={`flex max-w-[80%] md:max-w-[60%] text-left min-w-20 rounded-2xl px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap wrap-break-word text-base items-end gap-3 ${
                     isUserMessage
                       ? "ml-auto  flex-row-reverse"
@@ -733,7 +838,7 @@ export function FullChatWindow({
                         ? `https://api.dicebear.com/9.x/notionists-neutral/svg?seed=${user.id}`
                         : "/images/logo.png"
                     }
-                    alt="avatar"
+                    alt={isUserMessage ? "Your avatar" : "Robot avatar"}
                   />
                   <div
                     className={`relative inline-flex flex-col max-w-[85%] md:max-w-[70%] min-w-12 rounded-2xl px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap text-base shadow-sm ${
@@ -763,7 +868,9 @@ export function FullChatWindow({
             {/* Typing indicator */}
             {(typingUsers.has("system") || typingUsers.has("admin")) && (
               <div className="flex max-w-[80%] md:max-w-[60%] min-w-20 rounded-2xl px-4 py-10 text-[15px] leading-relaxed whitespace-pre-wrap wrap-break-word text-base items-end gap-5">
-                <img
+                <Image
+                  width={28}
+                  height={28}
                   className="w-7! h-7! rounded-full object-cover"
                   src="/images/logo.png"
                   alt="avatar"
@@ -830,9 +937,12 @@ export function FullChatWindow({
                     ta.scrollHeight > maxHeight ? "auto" : "hidden";
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder={isAIResponding ? "Thinking..." : "Ask anything"}
+                aria-label="Message"
+                placeholder={
+                  isAIResponding ? "Robot is thinking…" : "Message Robot"
+                }
                 disabled={isSendingMessage}
-                className="w-full resize-none bg-transparent p-2 pr-3 mb-1 text-base text-skill-text placeholder-primary-text/50 focus:outline-none focus:ring-0 max-h-50 overflow-hidden disabled:opacity-50"
+                className="w-full resize-none bg-transparent p-2 pr-3 mb-1 text-base text-skill-text placeholder-primary-text/50 focus:outline-none! focus:ring-0  max-h-50 overflow-hidden disabled:opacity-50"
                 style={{
                   minHeight: "10px",
                   paddingBottom: input.trim() ? "8px" : "4px",
@@ -857,7 +967,7 @@ export function FullChatWindow({
                   input.trim() &&
                   !isSendingMessage &&
                   !(isAIResponding && !onlineUsers.has("admin"))
-                    ? "bg-primary/80 text-white hover:opacity-90 cursor-pointer"
+                    ? "bg-primary text-white shadow-sm hover:bg-primary/90 active:scale-95"
                     : "text-gray-400 cursor-not-allowed"
                 }`}
               >

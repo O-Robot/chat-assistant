@@ -82,14 +82,20 @@ export function ChatWidget() {
 
   return (
     <>
-      {isOpen && <ChatWindow onClose={() => setIsOpen(false)} />}
+      {isOpen && (
+        <div id="portfolio-chat-window" className="fixed inset-0 z-50">
+          <ChatWindow onClose={() => setIsOpen(false)} />
+        </div>
+      )}
 
       <button
         onClick={() => setIsOpen(true)}
-        className={`fixed bottom-0 md:bottom-3 right-3 z-50 flex items-center justify-center w-14 h-14 rounded-full transition-all duration-300 ease-in-out transform hover:scale-90 bg-primary cursor-pointer ${
+        aria-label="Open chat with Ogooluwani"
+        aria-expanded={isOpen}
+        aria-controls="portfolio-chat-window"
+        className={`fixed bottom-3 right-3 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary shadow-lg shadow-primary/30 transition duration-200 hover:-translate-y-0.5 hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
           isOpen ? "scale-0" : "scale-100"
         }`}
-        aria-label="Open chat"
       >
         {user && user.email ? (
           <div className="relative">
@@ -118,15 +124,17 @@ export function ChatWidget() {
       </button>
 
       {!isOpen && unreadCount === 0 && (
-        <div
+        <button
+          type="button"
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-18 md:bottom-21 right-3 z-50 max-w-xs bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transform transition-all duration-300 ease-in-out animate-fade-in cursor-pointer "
+          className="fixed bottom-20 right-3 z-50 max-w-[17rem] rounded-2xl border border-primary/10 bg-white p-4 text-left shadow-lg shadow-primary/10 motion-safe:animate-fade-in dark:bg-slate-900"
         >
-          <p className="text-sm text-gray-800 dark:text-white">
+          <p className="text-sm font-medium text-gray-800 dark:text-white">
             Hi {user?.firstName || "there"}! 👋 How can I help you today?
           </p>
-          <div className="absolute -bottom-2 right-6 w-4 h-4 bg-white dark:bg-gray-800 transform rotate-45" />
-        </div>
+          <span className="mt-1 block text-xs text-secondary-text">Usually replies in a moment</span>
+          <span className="absolute -bottom-2 right-6 h-4 w-4 rotate-45 border-b border-r border-primary/10 bg-white dark:bg-slate-900" />
+        </button>
       )}
     </>
   );

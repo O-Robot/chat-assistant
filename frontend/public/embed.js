@@ -10,10 +10,10 @@
       bottom: 20px;
       right: 20px;
       z-index: 999999;
-      width: 200px; 
-      height: 150px;
+      width: min(420px, calc(100vw - 24px));
+      height: min(630px, calc(100dvh - 24px));
       pointer-events: none; 
-      transition: all 0.3s ease;
+      transition: width 0.24s ease, height 0.24s ease;
     `;
 
     const widgetUrl = scriptTag?.dataset.widgetUrl || "http://localhost:3000";
@@ -24,8 +24,10 @@
       width: 100%;
       height: 100%;
       border: none;
+      border-radius: 18px;
       pointer-events: auto;
     `;
+    iframe.title = "Chat with Ogooluwani";
 
     container.appendChild(iframe);
     document.body.appendChild(container);
@@ -53,10 +55,10 @@
       }
       if (event.data.type === "CHAT_STATE_CHANGED") {
         if (event.data.isOpen) {
-          container.style.width = "420px";
-          container.style.height = "630px";
+          container.style.width = "min(420px, calc(100vw - 24px))";
+          container.style.height = "min(630px, calc(100dvh - 24px))";
         } else {
-          container.style.width = "200px";
+          container.style.width = "min(200px, calc(100vw - 24px))";
           container.style.height = "150px";
         }
       }

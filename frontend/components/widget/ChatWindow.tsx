@@ -1,6 +1,9 @@
+/* eslint-disable @next/next/no-img-element */
 import { useConfirmationModal } from "@/hooks/use-modal";
 import { toast } from "@/hooks/use-toast";
+import { useSocketConnection } from "@/hooks/useSocketConnection";
 import { userApi } from "@/lib/axios";
+import { sanitizedContent } from "@/lib/constants";
 import {
   getConversationCookie,
   getUserCookie,
@@ -13,6 +16,13 @@ import { getSocket } from "@/lib/socket";
 import { useChatStore } from "@/store/chatStore";
 import { Message, Status, UserRole, Visitor } from "@/types";
 import {
+  Menu,
+  MenuButton,
+  MenuItem,
+  MenuItems,
+  Transition,
+} from "@headlessui/react";
+import {
   ArrowUp,
   EllipsisVertical,
   Loader2,
@@ -22,24 +32,16 @@ import {
   Send,
   X,
 } from "lucide-react";
+import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Card } from "../ui/card";
-import { Input } from "../ui/input";
 import PhoneInput from "react-phone-input-2";
 import "react-phone-input-2/lib/bootstrap.css";
-import { Button } from "../ui/button";
-import {
-  Menu,
-  MenuButton,
-  MenuItem,
-  MenuItems,
-  Transition,
-} from "@headlessui/react";
 import { ConfirmationModal } from "../shared/ConfirmationModal";
-import { useRouter } from "next/navigation";
-import { sanitizedContent } from "@/lib/constants";
-import { useSocketConnection } from "@/hooks/useSocketConnection";
 import { ReconnectionIndicator } from "../shared/ReconnectionIndicator";
+import { Button } from "../ui/button";
+import { Card } from "../ui/card";
+import { Input } from "../ui/input";
 
 export const ChatWindow = ({ onClose }: any) => {
   useSocketConnection();
@@ -70,6 +72,9 @@ export const ChatWindow = ({ onClose }: any) => {
   const [isSubmittingForm, setIsSubmittingForm] = useState(false);
   const [isFocus, setFocus] = useState(false);
   const [conversationClosed, setConversationClosed] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -78,8 +83,10 @@ export const ChatWindow = ({ onClose }: any) => {
     country: "",
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesListRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const preserveScrollPositionRef = useRef(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -113,6 +120,7 @@ export const ChatWindow = ({ onClose }: any) => {
       }
 
       loadMessagesFromLocalStorage(conversationId);
+      setUser(userCookie);
 
       try {
         const response = await userApi.get(
@@ -122,7 +130,8 @@ export const ChatWindow = ({ onClose }: any) => {
 
         clearMessages();
         msgs.forEach(receiveMessage);
-        setUser(userCookie);
+        setNextCursor(response.data.nextCursor || null);
+        setLoadError(null);
         setLoadingMessages(false);
         msgs.forEach((msg) => {
           receiveMessage(msg);
@@ -138,6 +147,9 @@ export const ChatWindow = ({ onClose }: any) => {
         }, 1000);
       } catch (error) {
         console.error("Error loading messages:", error);
+        setLoadError(
+          "We could not refresh this conversation. Your saved messages are still available.",
+        );
       } finally {
         setLoadingMessages(false);
       }
@@ -187,8 +199,51 @@ export const ChatWindow = ({ onClose }: any) => {
   }, [user?.id]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (preserveScrollPositionRef.current) {
+      preserveScrollPositionRef.current = false;
+      return;
+    }
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+    });
   }, [messages, typingUsers]);
+
+  const loadOlderMessages = async () => {
+    const conversationId = getConversationCookie();
+    if (!conversationId || !nextCursor || isLoadingOlder) return;
+
+    const list = messagesListRef.current;
+    const previousHeight = list?.scrollHeight || 0;
+    const previousTop = list?.scrollTop || 0;
+    preserveScrollPositionRef.current = true;
+    setIsLoadingOlder(true);
+
+    try {
+      const response = await userApi.get(
+        `/api/conversations/${conversationId}/messages/`,
+        {
+          params: { before: nextCursor, limit: 50 },
+        },
+      );
+      const olderMessages: Message[] = response.data.messages || [];
+      olderMessages.forEach(receiveMessage);
+      setNextCursor(response.data.nextCursor || null);
+      requestAnimationFrame(() => {
+        if (list)
+          list.scrollTop = previousTop + (list.scrollHeight - previousHeight);
+      });
+    } catch (error) {
+      console.error("Error loading older messages:", error);
+      toast({
+        title: "Couldn’t load earlier messages",
+        description: "Check your connection and try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingOlder(false);
+    }
+  };
 
   //typing
   const startTypingEmit = () => {
@@ -427,6 +482,8 @@ export const ChatWindow = ({ onClose }: any) => {
       clearMessages();
       setConversationCookie(data.conversationId);
       setConversationClosed(false);
+      setNextCursor(null);
+      setLoadError(null);
       setFocus(false);
 
       initializeSocketListeners();
@@ -461,24 +518,36 @@ export const ChatWindow = ({ onClose }: any) => {
   // Form for new user
   if (!user?.email) {
     return (
-      <div className="fixed bottom-6 right-6 z-50 w-95 h-150 bg-background rounded-2xl  flex flex-col overflow-hidden border-0">
-        <div className="flex justify-between items-center p-4 border-b border-gray-200 bg-primary">
-          <h2 className="text-lg font-semibold text-white">
-            Let's get to know you 👋
-          </h2>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-full hover:bg-white/20 text-white transition-colors cursor-pointer"
-          >
-            <X size={20} />
-          </button>
+      <div className="h-full w-full bg-background flex flex-col overflow-hidden rounded-2xl">
+        <div className="border-b border-white/15 bg-primary px-5 py-5 text-white">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-white/70">
+                Welcome
+              </p>
+              <h2 className="mt-1 text-lg font-semibold">
+                Let’s start with the basics
+              </h2>
+              <p className="mt-1 text-sm leading-5 text-white/80">
+                Share your details so we can keep this conversation together.
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="Close chat"
+              className="rounded-lg p-2 text-white transition-colors hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
-        <Card className="border-0 py-8 px-5 shadow-none">
-          <form onSubmit={handleUserSubmit} className="space-y-6">
-            <div className="flex gap-4">
+        <Card className="flex-1 overflow-y-auto border-0 bg-transparent px-5 py-6 shadow-none">
+          <form onSubmit={handleUserSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
               <Input
-                placeholder="First Name"
+                aria-label="First name"
+                placeholder="First name"
                 value={form.firstName}
                 onChange={(e) =>
                   setForm({ ...form, firstName: e.target.value })
@@ -488,7 +557,8 @@ export const ChatWindow = ({ onClose }: any) => {
                 className="glass-morphism border-white/20 text-primary-text/80 placeholder:text-primary-text/50"
               />
               <Input
-                placeholder="Last Name"
+                aria-label="Last name"
+                placeholder="Last name"
                 value={form.lastName}
                 onChange={(e) => setForm({ ...form, lastName: e.target.value })}
                 required
@@ -500,7 +570,8 @@ export const ChatWindow = ({ onClose }: any) => {
             <div>
               <Input
                 type="email"
-                placeholder="Your Email"
+                aria-label="Email address"
+                placeholder="Email address"
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 className="glass-morphism border-white/20 text-primary-text/80 placeholder:text-primary-text/50"
@@ -520,23 +591,23 @@ export const ChatWindow = ({ onClose }: any) => {
                 containerClass="!rounded-md"
                 inputClass="glass-morphism !py-3 !border-gray-300 border-none !w-[100%] text-primary-text/80! placeholder:text-primary-text/50"
                 dropdownClass="text-primary-text/80"
-                inputProps={{ required: true }}
+                inputProps={{ required: true, "aria-label": "Phone number" }}
               />
             </div>
 
             <Button
               type="submit"
-              className="w-full glass-morphism text-primary-text/80 font-bold hover:text-primary hover:animate-glow hover:shadow-lg cursor-pointer"
+              className="w-full bg-primary text-white font-semibold shadow-sm transition-transform hover:bg-primary/90 active:scale-[0.98]"
               size="lg"
               disabled={isSubmittingForm}
             >
               {isSubmittingForm ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Please wait...
+                  Starting your chat…
                 </>
               ) : (
-                "Continue"
+                "Start chatting"
               )}
             </Button>
           </form>
@@ -546,22 +617,24 @@ export const ChatWindow = ({ onClose }: any) => {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 w-95 h-150 bg-background rounded-2xl shadow-xl shadow-primary/30 flex flex-col overflow-hidden">
+    <div className="h-full w-full bg-background text-primary-text flex flex-col overflow-hidden rounded-2xl shadow-2xl shadow-primary/20">
       <ReconnectionIndicator />
 
       {/* Header */}
-      <div className="flex justify-between items-center p-4 border-b border-gray-200 bg-primary">
+      <div className="flex justify-between items-center border-b border-white/10 bg-primary px-4 py-3.5">
         <div className="flex items-center gap-3">
-          <img
+          <Image
             src="/images/logo.png"
-            alt="logo"
-            className="w-8 h-8 rounded-full"
+            alt="Ogooluwani"
+            width={36}
+            height={36}
+            className="h-9 w-9 rounded-full ring-2 ring-white/20"
           />
           <div>
-            <h3 className="font-semibold text-white text-sm">
-              Ogooluwani's Chat
+            <h3 className="font-semibold text-white text-sm leading-tight">
+              Ogooluwani&apos;s Chat
             </h3>
-            <span className="text-xs text-white/80">
+            <span className="mt-0.5 text-xs text-white/80" aria-live="polite">
               {isSystemOnline ? (
                 <span className="flex items-center gap-1">
                   <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
@@ -594,12 +667,17 @@ export const ChatWindow = ({ onClose }: any) => {
               }
             }}
             className="p-2 text-white rounded-lg hover:bg-white/20 transition-colors cursor-pointer"
+            aria-label="Open full chat"
+            title="Open full chat"
           >
             <Maximize size={18} />
           </button>
           <div className="relative">
             <Menu as="div" className="relative">
-              <MenuButton className="p-2 text-white  cursor-pointer rounded-lg hover:bg-white/20">
+              <MenuButton
+                aria-label="Conversation options"
+                className="p-2 text-white rounded-lg hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              >
                 <EllipsisVertical size={20} />
               </MenuButton>
               <Transition
@@ -657,7 +735,8 @@ export const ChatWindow = ({ onClose }: any) => {
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-white rounded-lg hover:bg-white/20 transition-colors cursor-pointer"
+            aria-label="Minimise chat"
+            className="p-2 text-white rounded-lg hover:bg-white/20 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
           >
             <X size={18} />
           </button>
@@ -665,38 +744,80 @@ export const ChatWindow = ({ onClose }: any) => {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 bg-background ">
+      <div
+        ref={messagesListRef}
+        className="flex-1 overflow-y-auto overscroll-contain bg-background px-4 py-4"
+        aria-label="Conversation messages"
+      >
         {isLoadingMessages ? (
           <div className="flex items-center justify-center h-full">
-            <Loader2 className="h-8 w-8 animate-spin text-primary-text" />
+            <div className="flex flex-col items-center gap-3 text-center text-sm text-secondary-text">
+              <Loader2 className="h-7 w-7 animate-spin text-primary" />
+              <span>Loading your conversation…</span>
+            </div>
           </div>
         ) : (
           <>
-            {messages.map((msg, i) => {
+            {loadError && (
+              <div
+                role="status"
+                className="mb-4 rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100"
+              >
+                {loadError}
+              </div>
+            )}
+            {nextCursor && (
+              <div className="mb-5 flex justify-center">
+                <button
+                  onClick={loadOlderMessages}
+                  disabled={isLoadingOlder}
+                  className="rounded-full border border-primary/20 bg-white/70 px-3 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/10 disabled:cursor-wait disabled:opacity-60 dark:bg-white/5"
+                >
+                  {isLoadingOlder
+                    ? "Loading earlier messages…"
+                    : "Load earlier messages"}
+                </button>
+              </div>
+            )}
+            {messages.length === 0 && !loadError && (
+              <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+                <div className="mb-3 rounded-2xl bg-primary/10 p-3 text-primary">
+                  <Send size={20} />
+                </div>
+                <p className="font-medium">Your conversation starts here</p>
+                <p className="mt-1 text-sm text-secondary-text">
+                  Tell Robot what you’d like to build or ask a question.
+                </p>
+              </div>
+            )}
+            {messages.filter(Boolean).map((msg) => {
               const isUserMessage =
                 msg?.sender?.id === user?.id || msg?.senderId === user?.id;
 
               return (
                 <div
-                  key={i}
-                  className={`flex items-end gap-2 mb-4 ${
+                  key={msg.id}
+                  className={`mb-4 flex items-end gap-2 motion-safe:animate-fade-in ${
                     isUserMessage ? "flex-row-reverse" : "flex-row"
                   }`}
                 >
                   <img
+                    width={20}
+                    height={20}
                     className="w-5 h-5 rounded-full object-cover"
                     src={
                       isUserMessage
                         ? `https://api.dicebear.com/9.x/notionists-neutral/svg?seed=${user?.id}`
                         : "/images/logo.png"
                     }
-                    alt="avatar"
+                    alt={isUserMessage ? "Your avatar" : "Robot avatar"}
                   />
+
                   <div
-                    className={`max-w-[75%] rounded-2xl px-4 py-2 ${
+                    className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 shadow-sm ${
                       isUserMessage
-                        ? "bg-primary text-white"
-                        : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-600"
+                        ? "rounded-br-md bg-primary text-white"
+                        : "rounded-bl-md border border-gray-200 bg-white text-gray-900 dark:border-white/10 dark:bg-white/8 dark:text-white"
                     }`}
                   >
                     <div className="text-sm whitespace-pre-wrap wrap-break-word">
@@ -707,7 +828,7 @@ export const ChatWindow = ({ onClose }: any) => {
                         }}
                       />
                     </div>
-                    <span className="text-[10px] opacity-70 mt-1 block">
+                    <span className="mt-1 block text-[10px] opacity-65">
                       {new Date(msg.timestamp).toLocaleTimeString("en-GB", {
                         hour: "2-digit",
                         minute: "2-digit",
@@ -722,7 +843,9 @@ export const ChatWindow = ({ onClose }: any) => {
             {/* Typing indicator */}
             {(typingUsers.has("system") || typingUsers.has("admin")) && (
               <div className="flex items-end gap-2 mb-4">
-                <img
+                <Image
+                  width={20}
+                  height={20}
                   className="w-5 h-5 rounded-full object-cover"
                   src="/images/logo.png"
                   alt="avatar"
@@ -750,7 +873,7 @@ export const ChatWindow = ({ onClose }: any) => {
               <div className="flex justify-center my-4">
                 <Button
                   onClick={handleStartNewConversation}
-                  className="glass-morphism"
+                  className="bg-primary text-white hover:bg-primary/90"
                 >
                   Start New Conversation
                 </Button>
@@ -764,9 +887,9 @@ export const ChatWindow = ({ onClose }: any) => {
 
       {/* Input */}
       {!conversationClosed && !isLoadingMessages && (
-        <div className="px-3 py-3 bg-background flex items-center justify-center">
+        <div className="border-t border-primary/10 bg-background px-3 py-3">
           <div
-            className={`w-full mx-auto relative shadow-xl border border-primary px-2 py-1 flex transition-all duration-300 rounded-xl ease-in-out ${
+            className={`w-full mx-auto relative border border-primary/25 bg-white/70 px-2 py-1.5 flex shadow-sm transition-all duration-200 ease-out focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 dark:bg-white/5 ${
               input.trim()
                 ? "flex-col rounded-xl"
                 : "flex-row items-center rounded-4xl"
@@ -801,9 +924,12 @@ export const ChatWindow = ({ onClose }: any) => {
                     await handleSend();
                   }
                 }}
-                placeholder={isAIResponding ? "Thinking..." : "Ask anything"}
+                aria-label="Message"
+                placeholder={
+                  isAIResponding ? "Robot is thinking…" : "Message Robot"
+                }
                 disabled={isSendingMessage}
-                className="w-full resize-none bg-transparent p-1 pr-3 mb-1 text-base text-skill-text placeholder-primary-text/50 focus:outline-none focus:ring-0 max-h-50 overflow-hidden disabled:opacity-50"
+                className="w-full resize-none bg-transparent p-2 pr-2 text-[15px] text-skill-text placeholder-primary-text/50 focus:outline-none! focus:ring-0 max-h-25 overflow-hidden disabled:opacity-50"
                 style={{
                   minHeight: "10px",
                   paddingBottom: input.trim() ? "8px" : "4px",
@@ -811,9 +937,7 @@ export const ChatWindow = ({ onClose }: any) => {
               />
             </div>
             <div
-              className={`flex ${
-                input.trim() ? "justify-end w-full" : "items-end"
-              }`}
+              className={`flex items-end ${input.trim() ? "justify-end w-full" : ""}`}
             >
               <button
                 onClick={async () => await handleSend()}
@@ -827,7 +951,7 @@ export const ChatWindow = ({ onClose }: any) => {
                   input.trim() &&
                   !isSendingMessage &&
                   !(isAIResponding && !onlineUsers.has("admin"))
-                    ? "bg-primary/80 text-white hover:opacity-90 cursor-pointer"
+                    ? "bg-primary text-white shadow-sm hover:bg-primary/90 active:scale-95"
                     : "text-gray-400 cursor-not-allowed"
                 }`}
               >
