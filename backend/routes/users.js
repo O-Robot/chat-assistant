@@ -66,44 +66,44 @@ router.post("/", async (req, res) => {
 
     const db = await openDB();
     const tenantId = getDefaultTenantId();
-
-    let user = await db.get(
-      "SELECT * FROM users WHERE email = ? AND tenantId = ?",
-      [email, tenantId],
-    );
-
-    if (!user) {
-      const userId = uuidv4();
-
-      await db.run(
-        `INSERT INTO users (id, firstName, lastName, email, phone, country, tenantId)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [userId, firstName, lastName, email, phone, country, tenantId],
-      );
-
-      user = await db.get("SELECT * FROM users WHERE id = ? AND tenantId = ?", [userId, tenantId]);
-    }
-
-    if (!user) {
-      return res
-        .status(500)
-        .json({ message: "Failed to create or fetch user" });
-    }
-
-    await db.run(
-      `UPDATE conversations
-       SET status = 'closed', closedAt = CURRENT_TIMESTAMP
-       WHERE userId = ? AND tenantId = ? AND status = 'open'`,
-      [user.id, tenantId],
-    );
-
+    let user;
     const conversationId = uuidv4();
 
-    await db.run(
-      `INSERT INTO conversations (id, userId, status, tenantId)
-       VALUES (?, ?, 'open', ?)`,
-      [conversationId, user.id, tenantId],
-    );
+    await db.exec("BEGIN IMMEDIATE");
+    try {
+      user = await db.get(
+        "SELECT * FROM users WHERE email = ? AND tenantId = ?",
+        [email, tenantId],
+      );
+
+      if (!user) {
+        const userId = uuidv4();
+        await db.run(
+          `INSERT INTO users (id, firstName, lastName, email, phone, country, tenantId)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [userId, firstName, lastName, email, phone, country, tenantId],
+        );
+        user = await db.get("SELECT * FROM users WHERE id = ? AND tenantId = ?", [userId, tenantId]);
+      }
+
+      if (!user) throw new Error("Failed to create or fetch user");
+
+      await db.run(
+        `UPDATE conversations
+         SET status = 'closed', closedAt = CURRENT_TIMESTAMP
+         WHERE userId = ? AND tenantId = ? AND status = 'open'`,
+        [user.id, tenantId],
+      );
+      await db.run(
+        `INSERT INTO conversations (id, userId, status, tenantId)
+         VALUES (?, ?, 'open', ?)`,
+        [conversationId, user.id, tenantId],
+      );
+      await db.exec("COMMIT");
+    } catch (error) {
+      await db.exec("ROLLBACK");
+      throw error;
+    }
 
     setVisitorSession(res, signVisitorSession(user));
     await recordAuditEvent(db, {

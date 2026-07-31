@@ -21,6 +21,12 @@ export async function sendSystemMessage(io, conversationId, content) {
       "INSERT INTO messages (id, conversationId, senderId, content, timestamp) VALUES (?, ?, ?, ?, ?)",
       [messageId, conversationId, "system", sanitizedContent, timestamp],
     );
+    await db.run(
+      `UPDATE conversations
+       SET lastMessageAt = ?
+       WHERE id = ? AND (lastMessageAt IS NULL OR julianday(?) >= julianday(lastMessageAt))`,
+      [timestamp, conversationId, timestamp],
+    );
 
     const systemMessage = {
       id: messageId,

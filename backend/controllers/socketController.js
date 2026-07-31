@@ -185,6 +185,13 @@ export function handleSocketConnection(io, socket) {
           "INSERT INTO messages (id, conversationId, senderId, content, timestamp) VALUES (?, ?, ?, ?, ?)",
           [id, conversationId, senderId, sanitizedContent, timestamp],
         );
+        await db.run(
+          `UPDATE conversations
+           SET lastMessageAt = ?
+           WHERE id = ? AND tenantId = ?
+             AND (lastMessageAt IS NULL OR julianday(?) >= julianday(lastMessageAt))`,
+          [timestamp, conversationId, principal.tenantId, timestamp],
+        );
       } catch (error) {
         if (error.code !== "SQLITE_CONSTRAINT") throw error;
         const existing = await db.get(
@@ -354,7 +361,12 @@ export function handleSocketConnection(io, socket) {
         return acknowledge?.({ ok: false, error: "Conversation is unavailable" });
       }
       const db = await openDB();
-      const page = await getMessagesPage(db, { conversationId, before, limit });
+      const page = await getMessagesPage(db, {
+        conversationId,
+        tenantId: principal.tenantId,
+        before,
+        limit,
+      });
       acknowledge?.({ ok: true, ...page });
     } catch (error) {
       logger.error("socket_sync_error", { socketId: socket.id, tenantId: principal.tenantId, errorName: error.name, errorMessage: error.message });

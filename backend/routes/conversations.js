@@ -22,6 +22,7 @@ router.get("/:id/messages", authenticateVisitor, async (req, res) => {
 
     const page = await getMessagesPage(db, {
       conversationId: req.params.id,
+      tenantId: req.principal.tenantId,
       before: req.query.before,
       limit: req.query.limit,
     });
@@ -59,17 +60,21 @@ router.post("/new", authenticateVisitor, async (req, res) => {
     const db = await openDB();
     const { id: userId, tenantId } = req.principal;
 
-    // Close any existing open conversations
-    await db.run(
-      `UPDATE conversations 
-       SET status = 'closed', closedAt = CURRENT_TIMESTAMP 
-       WHERE userId = ? AND tenantId = ? AND status = 'open'`,
-      [userId, tenantId],
-    );
-
-    // Create new conversation
     const conversationId = uuidv4();
-    await db.run("INSERT INTO conversations (id, userId, status, tenantId) VALUES (?, ?, 'open', ?)", [conversationId, userId, tenantId]);
+    await db.exec("BEGIN IMMEDIATE");
+    try {
+      await db.run(
+        `UPDATE conversations
+         SET status = 'closed', closedAt = CURRENT_TIMESTAMP
+         WHERE userId = ? AND tenantId = ? AND status = 'open'`,
+        [userId, tenantId],
+      );
+      await db.run("INSERT INTO conversations (id, userId, status, tenantId) VALUES (?, ?, 'open', ?)", [conversationId, userId, tenantId]);
+      await db.exec("COMMIT");
+    } catch (error) {
+      await db.exec("ROLLBACK");
+      throw error;
+    }
     await recordAuditEvent(db, {
       tenantId,
       actorId: userId,

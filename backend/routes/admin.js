@@ -100,7 +100,7 @@ router.get("/conversations/:userId", async (req, res) => {
     const conversations = await db.all(
       `SELECT * FROM conversations 
        WHERE userId = ? AND tenantId = ?
-       ORDER BY createdAt ASC`,
+       ORDER BY COALESCE(lastMessageAt, createdAt) ASC, id ASC`,
       [userId, req.admin.tenantId],
     );
 

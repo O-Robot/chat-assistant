@@ -12,7 +12,7 @@ Before deployment:
 
 - Set and validate backend environment values, especially a 32+ character `JWT_SECRET`, admin credentials, tenant ID, database path, CORS origin, email, and AI keys.
 - Run frontend type checks, lint, and production build. TODO: resolve the existing frontend lint errors before treating lint as a release gate.
-- Back up the SQLite database before applying a release; application startup currently performs compatibility DDL.
+- Back up the SQLite database before applying a release, then run `npm run migrate --workspace=robot-chat-backend`. Startup also applies outstanding migrations, but the explicit command makes failures visible before traffic is switched.
 - Confirm `/health` returns `200` and `/ready` returns database status `ok` after deployment.
 
 ## Logging and monitoring
@@ -34,11 +34,10 @@ The current database is SQLite at `DB_PATH`; it requires filesystem-level backup
 1. Put the service into maintenance or stop the backend process.
 2. Copy the SQLite database and verify the copied file can be opened.
 3. Encrypt and store backups outside the deployment host with a documented retention policy. TODO: define retention and ownership.
-4. To recover, stop the backend, retain the failed database for investigation, restore a verified backup to `DB_PATH`, start the backend, then check `/ready` and a known authorised flow.
+4. To recover, stop the backend, retain the failed database for investigation, restore a verified backup to `DB_PATH`, run migrations only after taking a fresh copy, start the backend, then check `/ready` and a known authorised flow.
 
 Test restoration regularly. Do not rely on deployment archives as database backups.
 
 ## Incident response
 
 Record the request ID, relevant structured log events, tenant/resource identifiers, timestamps, and the smallest necessary audit-event range. Rotate credentials and invalidate affected sessions where compromise is suspected. TODO: define escalation contacts, recovery time objectives, and a formal incident runbook.
-

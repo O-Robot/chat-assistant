@@ -14,10 +14,10 @@ export function createCursor(message) {
   return message ? `${message.timestamp}|${message.id}` : null;
 }
 
-export async function getMessagesPage(db, { conversationId, before, limit }) {
+export async function getMessagesPage(db, { conversationId, tenantId, before, limit }) {
   const pageSize = Math.min(Math.max(Number(limit) || 50, 1), MAX_PAGE_SIZE);
   const cursor = parseCursor(before);
-  const params = [conversationId];
+  const params = [conversationId, tenantId];
   let cursorClause = "";
 
   if (cursor) {
@@ -31,7 +31,8 @@ export async function getMessagesPage(db, { conversationId, before, limit }) {
             u.firstName, u.lastName, u.email
      FROM messages m
      LEFT JOIN users u ON m.senderId = u.id
-     WHERE m.conversationId = ? ${cursorClause}
+     JOIN conversations c ON c.id = m.conversationId
+     WHERE m.conversationId = ? AND c.tenantId = ? ${cursorClause}
      ORDER BY m.timestamp DESC, m.id DESC
      LIMIT ?`,
     params,
@@ -62,4 +63,3 @@ export function formatMessage(message) {
             },
   };
 }
-

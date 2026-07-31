@@ -2,6 +2,7 @@ import path from "path";
 import fs from "fs";
 import sqlite3 from "sqlite3";
 import { open } from "sqlite";
+import { runMigrations } from "./migrations.js";
 
 export async function openDB() {
   const dbPath = process.env.DB_PATH || path.resolve("./db/data.sqlite");
@@ -13,7 +14,7 @@ export async function openDB() {
   }
 
   const db = await open({
-    filename: process.env.DB_PATH || "./db/data.sqlite",
+    filename: dbPath,
     driver: sqlite3.Database,
   });
 
@@ -39,7 +40,7 @@ export async function openDB() {
       id TEXT PRIMARY KEY,
       firstName TEXT,
       lastName TEXT,
-      email TEXT UNIQUE,
+      email TEXT NOT NULL,
       phone TEXT,
       country TEXT,
       tenantId TEXT,
@@ -56,6 +57,7 @@ export async function openDB() {
       tenantId TEXT,
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
       closedAt DATETIME,
+      lastMessageAt DATETIME,
       FOREIGN KEY (userId) REFERENCES users(id)
     )
   `);
@@ -126,6 +128,8 @@ export async function openDB() {
     CREATE INDEX IF NOT EXISTS idx_audit_events_resource
       ON audit_events(resourceType, resourceId, createdAt DESC);
   `);
+
+  await runMigrations(db);
 
   return db;
 }
