@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Loader2, Lock, Mail } from "lucide-react";
+import { ArrowRight, Loader2, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { adminApi } from "@/lib/axios";
 
@@ -55,38 +55,40 @@ export default function AdminAuthPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-blue-50 via-white to-purple-50 p-4">
-      <Card className="w-full max-w-md shadow-2xl border-0">
-        <CardHeader className="space-y-4 pb-8">
-          <div className="flex justify-center">
-            <div className="w-20 h-20 bg-linear-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
-              <Lock className="w-10 h-10 text-white" />
-            </div>
-          </div>
-          <div className="text-center">
-            <CardTitle className="text-3xl font-bold bg-linear-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-              Admin Login
-            </CardTitle>
-            <p className="text-gray-500 mt-2">
-              Sign in to access the dashboard
-            </p>
+    <main className="relative grid min-h-screen overflow-hidden bg-slate-50 p-4 dark:bg-slate-950 lg:grid-cols-2 lg:p-6">
+      <section className="relative hidden overflow-hidden rounded-3xl bg-slate-900 p-10 text-white lg:flex lg:flex-col lg:justify-between">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(124,58,237,0.45),transparent_38%),radial-gradient(circle_at_bottom_left,rgba(14,165,233,0.35),transparent_42%)]" />
+        <div className="relative flex items-center gap-3"><div className="rounded-xl bg-white/10 p-2.5"><ShieldCheck className="h-6 w-6" /></div><span className="text-sm font-semibold tracking-wide">Portfolio Chat</span></div>
+        <div className="relative max-w-md"><p className="text-sm font-medium text-violet-200">Support workspace</p><h1 className="mt-3 text-4xl font-semibold tracking-tight">Give every conversation your full attention.</h1><p className="mt-5 text-base leading-7 text-slate-300">A focused, secure inbox for the conversations that matter to your business.</p></div>
+        <p className="relative text-xs text-slate-400">Protected admin access · Session secured with HttpOnly cookies</p>
+      </section>
+
+      <section className="flex items-center justify-center lg:p-10">
+      <Card className="w-full max-w-md border border-slate-200/80 bg-white shadow-xl shadow-slate-950/5 dark:border-slate-800 dark:bg-slate-900">
+        <CardHeader className="space-y-4 pb-6">
+          <div className="flex items-center gap-3 lg:hidden"><div className="rounded-xl bg-primary/10 p-2 text-primary"><ShieldCheck className="h-5 w-5" /></div><span className="text-sm font-semibold">Portfolio Chat</span></div>
+          <div className="rounded-xl bg-primary/10 p-3 text-primary w-fit"><LockKeyhole className="h-6 w-6" /></div>
+          <div>
+            <CardTitle className="text-2xl font-semibold tracking-tight">Welcome back</CardTitle>
+            <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">Sign in to manage your support inbox.</p>
           </div>
         </CardHeader>
 
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-5" aria-busy={isLoading}>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">
+              <label htmlFor="admin-email" className="text-sm font-medium text-slate-700 dark:text-slate-200">
                 Email Address
               </label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
+                  id="admin-email"
                   type="email"
                   placeholder="admin@example.com"
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className="pl-10 h-12 border-gray-200 focus:border-blue-500 transition-colors"
+                  className="h-12 border-slate-200 pl-10 transition-colors focus-visible:ring-primary dark:border-slate-700"
                   disabled={isLoading}
                   required
                 />
@@ -94,19 +96,20 @@ export default function AdminAuthPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">
+              <label htmlFor="admin-password" className="text-sm font-medium text-slate-700 dark:text-slate-200">
                 Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
+                  id="admin-password"
                   type="password"
                   placeholder="••••••••"
                   value={form.password}
                   onChange={(e) =>
                     setForm({ ...form, password: e.target.value })
                   }
-                  className="pl-10 h-12 border-gray-200 focus:border-blue-500 transition-colors"
+                  className="h-12 border-slate-200 pl-10 transition-colors focus-visible:ring-primary dark:border-slate-700"
                   disabled={isLoading}
                   required
                 />
@@ -115,7 +118,7 @@ export default function AdminAuthPage() {
 
             <Button
               type="submit"
-              className="w-full h-12 bg-linear-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold shadow-lg hover:shadow-xl transition-all"
+              className="h-12 w-full font-semibold shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
               disabled={isLoading}
             >
               {isLoading ? (
@@ -124,16 +127,17 @@ export default function AdminAuthPage() {
                   Signing in...
                 </>
               ) : (
-                "Sign In"
+                <><span>Sign in to inbox</span><ArrowRight className="ml-2 h-4 w-4" /></>
               )}
             </Button>
           </form>
 
-          <p className="text-center text-sm text-gray-500 mt-6">
-            Secure admin access only
+          <p className="mt-6 text-center text-xs text-slate-500">
+            Restricted to authorised administrators.
           </p>
         </CardContent>
       </Card>
-    </div>
+      </section>
+    </main>
   );
 }

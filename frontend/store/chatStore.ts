@@ -260,9 +260,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
 
     socket.on("user_typing", (data: { id: string; conversationId: string }) => {
-      if (data.id === "system") {
+      if (data.id === "ai") {
         get().setAIResponding(true);
-        get().startTyping("system");
+        get().startTyping("ai");
       } else {
         get().startTyping(data.id);
       }
@@ -271,9 +271,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     socket.on(
       "user_stopped_typing",
       (data: { id: string; conversationId: string }) => {
-        if (data.id === "system") {
+        if (data.id === "ai") {
           get().setAIResponding(false);
-          get().stopTyping("system");
+          get().stopTyping("ai");
         } else {
           get().stopTyping(data.id);
         }
@@ -283,13 +283,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     socket.on("receive_message", (message: Message) => {
       get().receiveMessage(message);
 
-      if (message.senderId === "system") {
+      if (message.senderId === "ai") {
         get().setAIResponding(false);
       }
     });
 
     socket.on("conversation_closed", (conversationId: string) => {
       Console.log("Conversation closed:", conversationId);
+      set({ conversationClosed: true, isAIResponding: false });
+    });
+
+    socket.on("conversation_deleted", (conversationId: string) => {
+      if (conversationId !== getConversationCookie()) return;
+      get().clearMessages();
       set({ conversationClosed: true, isAIResponding: false });
     });
 

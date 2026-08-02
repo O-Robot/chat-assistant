@@ -51,10 +51,12 @@ export function formatMessage(message) {
     ...message,
     timestamp: new Date(message.timestamp).getTime(),
     sender:
-      message.senderId === "system"
-        ? { id: "system", firstName: "Robot", lastName: "", email: "robot@ogooluwaniadewale.com" }
+      message.senderId === "ai"
+        ? { id: "ai", firstName: "Robot", lastName: "", email: "robot@ogooluwaniadewale.com", role: "ai" }
+        : message.senderId === "system"
+          ? { id: "system", firstName: "System", lastName: "", email: "", role: "system" }
         : message.senderId === "admin"
-          ? { id: "admin", firstName: "Ogooluwani", lastName: "", email: "" }
+          ? { id: "admin", firstName: "Ogooluwani", lastName: "", email: "", role: "admin" }
           : {
               id: message.senderId,
               firstName: message.firstName,

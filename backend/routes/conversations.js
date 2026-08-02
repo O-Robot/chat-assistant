@@ -66,7 +66,7 @@ router.post("/new", authenticateVisitor, async (req, res) => {
       await db.run(
         `UPDATE conversations
          SET status = 'closed', closedAt = CURRENT_TIMESTAMP
-         WHERE userId = ? AND tenantId = ? AND status = 'open'`,
+         WHERE userId = ? AND tenantId = ? AND status IN ('open', 'transferred')`,
         [userId, tenantId],
       );
       await db.run("INSERT INTO conversations (id, userId, status, tenantId) VALUES (?, ?, 'open', ?)", [conversationId, userId, tenantId]);

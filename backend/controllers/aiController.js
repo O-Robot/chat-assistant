@@ -1,5 +1,5 @@
 import { openDB } from "../db.js";
-import { sendSystemMessage } from "../utils/systemMessages.js";
+import { sendAIMessage, sendSystemMessage } from "../utils/systemMessages.js";
 import { GoogleGenAI } from "@google/genai";
 import Groq from "groq-sdk";
 import { setPendingTransfer } from "./socketController.js";
@@ -233,7 +233,7 @@ async function generateWithGoogle(
       parts: [{ text: systemPrompt }],
     },
     ...conversationHistory.map((msg) => ({
-      role: msg.senderId === "system" ? "model" : "user",
+      role: ["system", "ai", "admin"].includes(msg.senderId) ? "model" : "user",
       parts: [{ text: msg.content }],
     })),
   ];
@@ -256,7 +256,9 @@ async function generateWithGroq(modelName, conversationHistory, systemPrompt) {
   const messages = [
     { role: "system", content: systemPrompt },
     ...conversationHistory.map((msg) => ({
-      role: msg.senderId === "system" ? "assistant" : "user",
+      role: ["system", "ai", "admin"].includes(msg.senderId)
+        ? "assistant"
+        : "user",
       content: msg.content,
     })),
   ];
@@ -343,7 +345,7 @@ export async function handleAIResponse(io, message) {
       [conversationId],
     );
 
-    if (conversation && conversation?.status === "transferred") {
+    if (!conversation || conversation.status !== "open") {
       console.log(
         `[AI] Conversation ${conversationId} is transferred. Skipping AI.`,
       );
@@ -388,7 +390,7 @@ export async function handleAIResponse(io, message) {
       [conversationId],
     );
 
-    if (latestConversation?.status === "transferred") {
+    if (!latestConversation || latestConversation.status !== "open") {
       console.log(
         `[AI] Transfer happened during generation. Dropping response.`,
       );
@@ -407,7 +409,7 @@ export async function handleAIResponse(io, message) {
     }
     // Send message
     if (aiResponse) {
-      await sendSystemMessage(io, conversationId, aiResponse);
+      await sendAIMessage(io, conversationId, aiResponse);
     }
   } catch (error) {
     console.error("AI pipeline failed:", error);
@@ -417,11 +419,16 @@ export async function handleAIResponse(io, message) {
       conversationId,
     });
 
-    await sendSystemMessage(
-      io,
-      conversationId,
-      "I’m having a bit of trouble processing that right now. Would you like me to connect you with Ogooluwani directly?",
+    const latestConversation = await openDB().then((db) =>
+      db.get("SELECT status FROM conversations WHERE id = ?", [conversationId]),
     );
+    if (latestConversation?.status === "open") {
+      await sendAIMessage(
+        io,
+        conversationId,
+        "I’m having a bit of trouble processing that right now. Would you like me to connect you with Ogooluwani directly?",
+      );
+    }
   } finally {
     aiRespondingState.set(conversationId, false);
   }

@@ -1,12 +1,13 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Info, CheckCircle } from "lucide-react";
+import { AlertTriangle, Info } from "lucide-react";
+import { useState } from "react";
 
 interface ConfirmationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   title: string;
   message: string;
   confirmText?: string;
@@ -26,7 +27,18 @@ export function ConfirmationModal({
   variant = "info",
   isLoading = false,
 }: ConfirmationModalProps) {
+  const [isConfirming, setIsConfirming] = useState(false);
   if (!isOpen) return null;
+
+  const handleConfirm = async () => {
+    setIsConfirming(true);
+    try {
+      await onConfirm();
+      onClose();
+    } finally {
+      setIsConfirming(false);
+    }
+  };
 
   const getIcon = () => {
     switch (variant) {
@@ -51,14 +63,14 @@ export function ConfirmationModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="presentation">
+      <div role="dialog" aria-modal="true" aria-labelledby="confirmation-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in dark:bg-slate-800">
         <div className="flex flex-col items-center text-center">
           {/* Icon */}
           <div className="mb-4">{getIcon()}</div>
 
           {/* Title */}
-          <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+          <h3 id="confirmation-title" className="mb-2 text-xl font-semibold text-gray-900 dark:text-gray-100">
             {title}
           </h3>
 
@@ -68,22 +80,21 @@ export function ConfirmationModal({
           {/* Actions */}
           <div className="flex gap-3 w-full">
             <Button
+              type="button"
               onClick={onClose}
               variant="outline"
               className="flex-1"
-              disabled={isLoading}
+              disabled={isLoading || isConfirming}
             >
               {cancelText}
             </Button>
             <Button
-              onClick={() => {
-                onConfirm();
-                onClose();
-              }}
+              type="button"
+              onClick={handleConfirm}
               className={`flex-1 ${getConfirmButtonClass()}`}
-              disabled={isLoading}
+              disabled={isLoading || isConfirming}
             >
-              {isLoading ? "Processing..." : confirmText}
+              {isLoading || isConfirming ? "Processing..." : confirmText}
             </Button>
           </div>
         </div>

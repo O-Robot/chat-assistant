@@ -85,16 +85,16 @@ export function handleSocketConnection(io, socket) {
         await db.run(
           `UPDATE conversations 
            SET status = 'closed', closedAt = CURRENT_TIMESTAMP 
-           WHERE userId = ? AND tenantId = ? AND status = 'open' AND id NOT IN (
+           WHERE userId = ? AND tenantId = ? AND status IN ('open', 'transferred') AND id NOT IN (
              SELECT id FROM conversations 
-             WHERE userId = ? AND tenantId = ? AND status = 'open'
+             WHERE userId = ? AND tenantId = ? AND status IN ('open', 'transferred')
              ORDER BY createdAt DESC LIMIT 1
            )`,
           [principal.id, principal.tenantId, principal.id, principal.tenantId],
         );
 
         const conversation = await db.get(
-          "SELECT * FROM conversations WHERE userId = ? AND tenantId = ? AND status = 'open' ORDER BY createdAt DESC LIMIT 1",
+          "SELECT * FROM conversations WHERE userId = ? AND tenantId = ? AND status IN ('open', 'transferred') ORDER BY createdAt DESC LIMIT 1",
           [principal.id, principal.tenantId],
         );
 
@@ -110,6 +110,7 @@ export function handleSocketConnection(io, socket) {
           );
 
           if (
+            conversation.status === "open" &&
             messageCount.count === 0 &&
             !conversationAdminStatus.get(conversation.id)
           ) {
@@ -120,7 +121,7 @@ export function handleSocketConnection(io, socket) {
 
       if (role === "admin") {
         const conversations = await db.all(
-          "SELECT * FROM conversations WHERE tenantId = ? AND status = 'open'",
+          "SELECT * FROM conversations WHERE tenantId = ? AND status IN ('open', 'transferred')",
           [principal.tenantId],
         );
 
@@ -187,8 +188,11 @@ export function handleSocketConnection(io, socket) {
 
       const senderId = principal.role === "admin" ? "admin" : principal.id;
 
-      // Check if admin is handling
-      const isAdminHandled = conversationAdminStatus.get(conversationId);
+      // A persisted transfer survives process restarts; the map only accelerates
+      // the common path. Do not allow AI to resume after a human handover.
+      const isAdminHandled =
+        conversationAdminStatus.get(conversationId) ||
+        conversation.status === "transferred";
 
       // Save message
       const timestamp = new Date().toISOString();
@@ -226,6 +230,22 @@ export function handleSocketConnection(io, socket) {
         metadata: { conversationId },
       });
 
+      // Claim the conversation before broadcasting the human reply. This closes
+      // the race where an already-running AI request could emit after an admin.
+      const adminTookOver = senderId === "admin" && !isAdminHandled;
+      if (adminTookOver) {
+        await db.run(
+          "UPDATE conversations SET status = 'transferred' WHERE id = ? AND tenantId = ?",
+          [conversationId, principal.tenantId],
+        );
+        conversationAdminStatus.set(conversationId, true);
+        pendingTransferRequests.delete(conversationId);
+        io.to(`conversation-${conversationId}`).emit(
+          "system_offline_for_conversation",
+          conversationId,
+        );
+      }
+
       // Get sender info
       let sender = null;
       if (senderId === "system") {
@@ -241,6 +261,7 @@ export function handleSocketConnection(io, socket) {
           firstName: "Ogooluwani",
           lastName: "",
           email: "hey@ogooluwaniadewale.com",
+          role: "admin",
         };
       } else {
         sender = await db.get("SELECT * FROM users WHERE id = ?", [senderId]);
@@ -253,6 +274,7 @@ export function handleSocketConnection(io, socket) {
         timestamp: new Date(timestamp).getTime(),
         content: sanitizedContent,
         sender,
+        senderRole: principal.role,
       };
       io.to(`conversation-${conversationId}`).emit(
         "receive_message",
@@ -260,19 +282,7 @@ export function handleSocketConnection(io, socket) {
       );
       respond(acknowledge, { ok: true, message: messageWithSender });
       // ADMIN JOINS - Switch from AI to Human
-      if (senderId === "admin" && !isAdminHandled) {
-        await db.run(
-          "UPDATE conversations SET status = 'transferred' WHERE id = ? AND tenantId = ?",
-          [conversationId, principal.tenantId],
-        );
-
-        conversationAdminStatus.set(conversationId, true);
-        pendingTransferRequests.delete(conversationId);
-        io.to(`conversation-${conversationId}`).emit(
-          "system_offline_for_conversation",
-          conversationId,
-        );
-
+      if (adminTookOver) {
         setTimeout(async () => {
           await sendSystemMessage(
             io,
@@ -450,7 +460,7 @@ export function handleSocketConnection(io, socket) {
   });
 
   // Close conversation
-  socket.on("close_conversation", async (conversationId) => {
+  socket.on("close_conversation", async (conversationId, acknowledge) => {
     try {
       const db = await openDB();
 
@@ -458,7 +468,9 @@ export function handleSocketConnection(io, socket) {
         "SELECT userId FROM conversations WHERE id = ? AND tenantId = ?",
         [conversationId, principal.tenantId],
       );
-      if (!conversation || (principal.role === "visitor" && conversation.userId !== principal.id)) return;
+      if (!conversation || (principal.role === "visitor" && conversation.userId !== principal.id)) {
+        return respond(acknowledge, { ok: false, error: "Conversation is unavailable" });
+      }
 
       await db.run(
         "UPDATE conversations SET status = 'closed', closedAt = CURRENT_TIMESTAMP WHERE id = ? AND tenantId = ?",
@@ -483,8 +495,166 @@ export function handleSocketConnection(io, socket) {
       );
 
       logger.info("conversation_closed", { tenantId: principal.tenantId, conversationId, actorId: principal.id });
+      respond(acknowledge, { ok: true });
     } catch (error) {
       logger.error("socket_close_error", { socketId: socket.id, tenantId: principal.tenantId, errorName: error.name, errorMessage: error.message });
+      respond(acknowledge, { ok: false, error: "Unable to close conversation" });
+    }
+  });
+
+  socket.on("delete_conversation", async (conversationId, acknowledge) => {
+    try {
+      if (principal.role !== "admin" || !conversationId) {
+        return respond(acknowledge, { ok: false, error: "Permission denied" });
+      }
+
+      const db = await openDB();
+      const conversation = await db.get(
+        "SELECT id, status FROM conversations WHERE id = ? AND tenantId = ?",
+        [conversationId, principal.tenantId],
+      );
+      if (!conversation) {
+        return respond(acknowledge, { ok: false, error: "Conversation not found" });
+      }
+      if (conversation.status !== "closed") {
+        return respond(acknowledge, { ok: false, error: "End the conversation before deleting it" });
+      }
+
+      await db.exec("BEGIN IMMEDIATE");
+      try {
+        await db.run("DELETE FROM conversation_reads WHERE conversationId = ? AND tenantId = ?", [conversationId, principal.tenantId]);
+        await db.run("DELETE FROM attachments WHERE conversationId = ? AND tenantId = ?", [conversationId, principal.tenantId]);
+        await db.run("DELETE FROM messages WHERE conversationId = ?", [conversationId]);
+        await db.run("DELETE FROM conversations WHERE id = ? AND tenantId = ?", [conversationId, principal.tenantId]);
+        await db.exec("COMMIT");
+      } catch (error) {
+        await db.exec("ROLLBACK");
+        throw error;
+      }
+
+      conversationAdminStatus.delete(conversationId);
+      pendingTransferRequests.delete(conversationId);
+      io.to(`conversation-${conversationId}`).emit("conversation_deleted", conversationId);
+      await recordAuditEvent(db, {
+        tenantId: principal.tenantId,
+        actorId: principal.id,
+        actorRole: principal.role,
+        action: "conversation.deleted",
+        resourceType: "conversation",
+        resourceId: conversationId,
+      });
+      logger.info("conversation_deleted", { tenantId: principal.tenantId, conversationId, actorId: principal.id });
+      respond(acknowledge, { ok: true });
+    } catch (error) {
+      logger.error("socket_delete_error", { socketId: socket.id, tenantId: principal.tenantId, errorName: error.name, errorMessage: error.message });
+      respond(acknowledge, { ok: false, error: "Unable to delete conversation" });
+    }
+  });
+
+  socket.on("delete_user", async (userId, acknowledge) => {
+    try {
+      if (principal.role !== "admin" || !userId) {
+        return respond(acknowledge, { ok: false, error: "Permission denied" });
+      }
+
+      const db = await openDB();
+      const user = await db.get(
+        "SELECT id FROM users WHERE id = ? AND tenantId = ?",
+        [userId, principal.tenantId],
+      );
+      if (!user) return respond(acknowledge, { ok: false, error: "Visitor not found" });
+
+      const conversations = await db.all(
+        "SELECT id FROM conversations WHERE userId = ? AND tenantId = ?",
+        [userId, principal.tenantId],
+      );
+      const conversationIds = conversations.map((conversation) => conversation.id);
+
+      await db.exec("BEGIN IMMEDIATE");
+      try {
+        for (const conversationId of conversationIds) {
+          await db.run("DELETE FROM conversation_reads WHERE conversationId = ? AND tenantId = ?", [conversationId, principal.tenantId]);
+          await db.run("DELETE FROM attachments WHERE conversationId = ? AND tenantId = ?", [conversationId, principal.tenantId]);
+          await db.run("DELETE FROM messages WHERE conversationId = ?", [conversationId]);
+        }
+        await db.run("DELETE FROM conversations WHERE userId = ? AND tenantId = ?", [userId, principal.tenantId]);
+        await db.run("DELETE FROM users WHERE id = ? AND tenantId = ?", [userId, principal.tenantId]);
+        await db.exec("COMMIT");
+      } catch (error) {
+        await db.exec("ROLLBACK");
+        throw error;
+      }
+
+      conversationIds.forEach((conversationId) => {
+        conversationAdminStatus.delete(conversationId);
+        pendingTransferRequests.delete(conversationId);
+        io.to(`conversation-${conversationId}`).emit("conversation_deleted", conversationId);
+      });
+      io.to(`user-${principal.tenantId}-${userId}`).emit("user_deleted", userId);
+      await recordAuditEvent(db, {
+        tenantId: principal.tenantId,
+        actorId: principal.id,
+        actorRole: principal.role,
+        action: "admin.user.deleted",
+        resourceType: "user",
+        resourceId: userId,
+        metadata: { conversationCount: conversationIds.length },
+      });
+      logger.info("admin_user_deleted", { tenantId: principal.tenantId, userId, actorId: principal.id });
+      respond(acknowledge, { ok: true });
+    } catch (error) {
+      logger.error("socket_delete_user_error", { socketId: socket.id, tenantId: principal.tenantId, errorName: error.name, errorMessage: error.message });
+      respond(acknowledge, { ok: false, error: "Unable to delete visitor" });
+    }
+  });
+
+  socket.on("delete_user_conversations", async (userId, acknowledge) => {
+    try {
+      if (principal.role !== "admin" || !userId) {
+        return respond(acknowledge, { ok: false, error: "Permission denied" });
+      }
+      const db = await openDB();
+      const conversations = await db.all(
+        "SELECT id FROM conversations WHERE userId = ? AND tenantId = ?",
+        [userId, principal.tenantId],
+      );
+      if (!conversations.length) {
+        return respond(acknowledge, { ok: false, error: "No conversations found" });
+      }
+
+      await db.exec("BEGIN IMMEDIATE");
+      try {
+        for (const { id: conversationId } of conversations) {
+          await db.run("DELETE FROM conversation_reads WHERE conversationId = ? AND tenantId = ?", [conversationId, principal.tenantId]);
+          await db.run("DELETE FROM attachments WHERE conversationId = ? AND tenantId = ?", [conversationId, principal.tenantId]);
+          await db.run("DELETE FROM messages WHERE conversationId = ?", [conversationId]);
+        }
+        await db.run("DELETE FROM conversations WHERE userId = ? AND tenantId = ?", [userId, principal.tenantId]);
+        await db.exec("COMMIT");
+      } catch (error) {
+        await db.exec("ROLLBACK");
+        throw error;
+      }
+
+      conversations.forEach(({ id: conversationId }) => {
+        conversationAdminStatus.delete(conversationId);
+        pendingTransferRequests.delete(conversationId);
+        io.to(`conversation-${conversationId}`).emit("conversation_deleted", conversationId);
+      });
+      await recordAuditEvent(db, {
+        tenantId: principal.tenantId,
+        actorId: principal.id,
+        actorRole: principal.role,
+        action: "admin.user.conversations.deleted",
+        resourceType: "user",
+        resourceId: userId,
+        metadata: { conversationCount: conversations.length },
+      });
+      logger.info("admin_user_conversations_deleted", { tenantId: principal.tenantId, userId, actorId: principal.id });
+      respond(acknowledge, { ok: true });
+    } catch (error) {
+      logger.error("socket_delete_user_conversations_error", { socketId: socket.id, tenantId: principal.tenantId, errorName: error.name, errorMessage: error.message });
+      respond(acknowledge, { ok: false, error: "Unable to delete conversations" });
     }
   });
 

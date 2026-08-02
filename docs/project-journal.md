@@ -11,6 +11,8 @@ This document is a chronological development log for completed project phases.
 | P003 | 2026-07-30 | ✅ Completed | `feat(ops): add observability and audit foundations` |
 | P004 | 2026-07-31 | ✅ Completed | `feat(data): add scalable storage foundations` |
 | P005 | 2026-07-31 | ✅ Completed | `feat(visitor): polish widget experience and conversation history` |
+| P006 | 2026-07-31 | ✅ Completed | `feat(admin): polish premium support inbox workspace` |
+| P006.1 | 2026-07-31 | ✅ Completed | `fix(admin): stabilise handover and conversation controls` |
 
 <details>
 <summary><strong>P001 — Security Hardening Foundation</strong></summary>
@@ -184,6 +186,117 @@ P006 — Not started.
 
 ```text
 feat(visitor): polish widget experience and conversation history
+```
+
+</details>
+
+<details>
+<summary><strong>P006 — Premium Admin Inbox Experience</strong></summary>
+
+### Objective
+
+Turn the existing admin inbox into a clearer, more comfortable support workspace while preserving the established API, authentication, and realtime behaviour.
+
+### UX Improvements Made
+
+- Redesigned the inbox layout around an intentional three-panel workspace: conversation list, message workspace, and responsive customer context.
+- Improved conversation-list hierarchy with search, filter states, unread emphasis, online presence, selection treatment, keyboard focus, loading skeletons, and a useful empty state.
+- Improved conversation reading with day separators, sender grouping, system-message treatment, clearer bubbles, typing feedback, archive affordances, and a non-disruptive jump-to-latest control.
+- Polished the composer with clearer focus and disabled states, a visible keyboard shortcut hint, send-button feedback, and per-conversation draft preservation.
+- Added a customer-details panel on ultrawide displays and an accessible context drawer on smaller viewports, using existing visitor and conversation data only.
+
+### Components Redesigned
+
+- `frontend/app/admin/page.tsx` — inbox shell, conversation sidebar, conversation header, message timeline, composer, responsive details context, and empty/loading states.
+
+### Responsive and Accessibility Improvements
+
+- The inbox list becomes a mobile drawer; customer context becomes a drawer below the ultrawide breakpoint rather than compressing the message workspace.
+- Replaced click-only conversation rows with semantic buttons and added labels for toolbar, drawer, search, and send controls.
+- Added visible keyboard focus states, semantic message/conversation labels, improved contrast, and motion-safe transitions/typing animation.
+
+### Performance Considerations
+
+- Kept existing data and Socket.IO flows unchanged.
+- The message timeline now avoids forcing agents back to the bottom while they review history, while retaining an explicit jump-to-latest action.
+- Used derived client-side filter state and avoided introducing new polling, API calls, or dependencies.
+
+### Verification Steps
+
+- Ran `npx tsc --noEmit` in `frontend` successfully.
+- Ran frontend lint successfully.
+- Ran the frontend production build successfully.
+- Checked the working-tree diff for whitespace errors.
+
+### Remaining Risks
+
+- Inbox data still relies on the existing full user list and per-user conversation-history endpoint; backend pagination/filter APIs remain the scalability path.
+- Tags, assignment, activity timeline, and attachment handling are intentionally presented only as future workspace capacity; no product workflow was added in this UI phase.
+
+### Next Phase
+
+P007 — Not started.
+
+### Suggested Conventional Commit
+
+```text
+feat(admin): polish premium support inbox workspace
+```
+
+</details>
+
+<details>
+<summary><strong>P006.1 — Admin Workspace Stabilisation &amp; UX Refinements</strong></summary>
+
+### Objective
+
+Correct functional regressions from P006 and refine the existing admin workspace without changing the broader product architecture or authentication contracts.
+
+### Bugs Fixed
+
+- Made message identity explicit across the socket, stored message hydration, and the admin timeline: visitor, admin, AI, and system messages now have distinct sender metadata and rendering.
+- Changed new AI replies to use the `ai` sender identity; historical and operational system events remain lightweight system messages.
+- Made human handover durable: an authenticated admin reply persists `transferred` status before broadcast, suppresses AI immediately, and drops any AI result that completes after takeover.
+- Restored transferred-conversation room membership after reconnect for both visitors and admins.
+- Restored admin typing visibility on the visitor side and refreshes the typing heartbeat while the composer changes.
+- Added acknowledged close handling with optimistic local state, error feedback, and visitor realtime propagation.
+- Added a tenant-scoped, admin-only delete conversation action with confirmation, processing state, audit logging, realtime notification, and dependent data cleanup.
+- Corrected the Online filter to use live Socket.IO presence rather than persisted visitor status.
+- Fixed Socket.IO principal selection when visitor and admin cookies coexist: the client now requests its route context and the server selects the matching verified session, so admin replies are persisted as admin messages and initiate human takeover.
+- Standardised the admin timeline AI avatar to DiceBear Bottts Neutral seed `Nadia` and added lifecycle-safe destructive actions: only closed conversations can be deleted, while admin-only visitor deletion removes the visitor and all tenant-scoped conversation history after confirmation.
+- Added selected-conversation transcript actions to the customer-details drawer alongside contact shortcuts for email, telephone, and WhatsApp.
+- Clarified conversation scope in the admin workspace: the ellipsis menu now retains full-history conversation send/export/delete actions, while each session divider exposes independent send/export/delete chat actions backed by tenant-scoped admin HTTP endpoints.
+
+### UX and Accessibility Improvements
+
+- Refined admin authentication into a responsive, accessible SaaS sign-in experience without altering the login flow.
+- Upgraded the shared confirmation dialog to support asynchronous actions and expose processing state, then reused it for logout, close, and deletion confirmations.
+- Added clear admin, Robot, and system labels plus distinct bubble/colour/avatar treatment in the admin timeline, without redesigning visitor chat surfaces.
+- Consolidated the admin profile experience into the existing customer-details drawer, preserving its responsive structure while adding the legacy profile view and edit/save workflow. The standalone profile component remains available for other consumers.
+
+### Verification Steps
+
+- Ran `npx tsc --noEmit` successfully in `frontend`.
+- Ran frontend lint successfully: 20 pre-existing warnings remain, with no errors or new warnings from this phase.
+- Ran frontend production build successfully.
+- Ran `node --check` for all changed backend modules successfully.
+- Checked the working-tree diff for whitespace errors.
+- Manual runtime checks still required in a configured local environment: admin reply takeover while an AI request is in flight, close/delete acknowledgements, and visitor typing visibility.
+
+### Remaining Known Issues
+
+- Conversation ownership is persisted via status but is still managed by process-local Socket.IO state for live presence and pending transfer prompts; multi-node scaling remains a later infrastructure concern.
+- Existing historical AI responses stored as `system` remain styled as system events. Newly generated AI messages use the explicit `ai` identity.
+- The admin conversation-history endpoint remains unpaginated and should be replaced before very large histories are common.
+
+### Next Phase
+
+P007 — Not started.
+
+### Suggested Conventional Commit
+
+```text
+fix(admin): stabilise handover and conversation controls
 ```
 
 </details>

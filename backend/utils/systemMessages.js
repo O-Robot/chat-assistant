@@ -2,7 +2,7 @@ import { openDB } from "../db.js";
 import { sanitizeHTML } from "../utils/sanitize.js";
 import { v4 as uuidv4 } from "uuid";
 
-export async function sendSystemMessage(io, conversationId, content) {
+export async function sendSystemMessage(io, conversationId, content, senderId = "system") {
   try {
     const sanitizedContent = sanitizeHTML(content);
 
@@ -19,7 +19,7 @@ export async function sendSystemMessage(io, conversationId, content) {
     // Save system message to database
     await db.run(
       "INSERT INTO messages (id, conversationId, senderId, content, timestamp) VALUES (?, ?, ?, ?, ?)",
-      [messageId, conversationId, "system", sanitizedContent, timestamp],
+      [messageId, conversationId, senderId, sanitizedContent, timestamp],
     );
     await db.run(
       `UPDATE conversations
@@ -31,14 +31,15 @@ export async function sendSystemMessage(io, conversationId, content) {
     const systemMessage = {
       id: messageId,
       conversationId,
-      senderId: "system",
+      senderId,
       content: sanitizedContent,
       timestamp: new Date(timestamp).getTime(),
       sender: {
-        id: "system",
-        firstName: "Robot",
+        id: senderId,
+        firstName: senderId === "ai" ? "Robot" : "System",
         lastName: "",
-        email: "robot@ogooluwaniadewale.com",
+        email: senderId === "ai" ? "robot@ogooluwaniadewale.com" : "",
+        role: senderId === "ai" ? "ai" : "system",
       },
     };
 
@@ -55,9 +56,13 @@ export async function sendSystemMessage(io, conversationId, content) {
   }
 }
 
+export function sendAIMessage(io, conversationId, content) {
+  return sendSystemMessage(io, conversationId, content, "ai");
+}
+
 export async function sendWelcomeMessage(io, conversationId, userName) {
   const welcomeText = `Hi ${userName}! 👋 I'm Robot, Ogooluwani's AI assistant. How can I help you today?`;
-  return await sendSystemMessage(io, conversationId, welcomeText);
+  return await sendAIMessage(io, conversationId, welcomeText);
 }
 
 export async function sendConversationClosedMessage(io, conversationId) {

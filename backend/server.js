@@ -107,7 +107,13 @@ io.use((socket, next) => {
       .find((cookie) => cookie.startsWith("whoami="))
       ?.slice("whoami=".length);
     const admin = adminToken ? verifyToken(decodeURIComponent(adminToken)) : null;
-    const authenticatedPrincipal = principal || admin;
+    const requestedRole = socket.handshake.auth?.role;
+    const authenticatedPrincipal =
+      requestedRole === "admin"
+        ? admin
+        : requestedRole === "visitor"
+          ? principal
+          : admin || principal;
     if (!authenticatedPrincipal || !["visitor", "admin"].includes(authenticatedPrincipal.role)) {
       logger.warn("socket_permission_denied", { socketId: socket.id, reason: "missing_principal" });
       return next(new Error("Unauthorised"));

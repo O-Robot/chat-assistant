@@ -29,14 +29,30 @@ const MAX_RECONNECT_DELAY = 30000;
 
 let socketConfig: SocketConfig = {};
 
+const getSocketRole = (): "admin" | "visitor" =>
+  typeof window !== "undefined" && window.location.pathname.startsWith("/admin")
+    ? "admin"
+    : "visitor";
+
 export const initializeSocket = (config?: SocketConfig) => {
   if (config) {
     socketConfig = config;
   }
 
   if (socket?.connected) {
-    Console.log("Socket already connected");
-    return socket;
+    const role = getSocketRole();
+    if ((socket.auth as { role?: string })?.role === role) {
+      Console.log("Socket already connected");
+      return socket;
+    }
+    // Route changes can retain the singleton. Reconnect with the explicitly
+    // requested, server-verified principal instead of reusing a visitor socket.
+    socket.auth = { role };
+    socket.disconnect().connect();
+  }
+
+  if (socket && !socket.connected) {
+    socket.auth = { role: getSocketRole() };
   }
 
   if (!socket) {
@@ -51,6 +67,7 @@ export const initializeSocket = (config?: SocketConfig) => {
       timeout: 20000,
       autoConnect: true,
       forceNew: false,
+      auth: { role: getSocketRole() },
     });
 
     socket.on("connect_error", (error) => {

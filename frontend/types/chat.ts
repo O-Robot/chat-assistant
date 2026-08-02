@@ -8,6 +8,7 @@ export type Message = {
   timestamp: number;
   formattedTime?: string;
   status?: "pending" | "sent" | "delivered" | "read" | "failed";
+  senderRole?: "visitor" | "admin" | "ai" | "system";
   sender?: any;
 };
 
