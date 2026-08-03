@@ -1,8 +1,8 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { ConfirmationModal } from "@/components/shared/ConfirmationModal";
 import { CustomerDetailsDrawer } from "@/components/admin/CustomerDetailsDrawer";
+import { ConfirmationModal } from "@/components/shared/ConfirmationModal";
 import { DarkModeToggle } from "@/components/shared/DarkModeToggle";
 import { useConfirmationModal } from "@/hooks/use-modal";
 import { useToast } from "@/hooks/use-toast";
@@ -41,7 +41,6 @@ import {
   Search,
   Send,
   Trash2,
-  UserIcon,
   X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -550,9 +549,16 @@ export default function AdminPage() {
         setIsExporting(true);
         try {
           await adminApi.post(`/admin/chats/${chatId}/export`, {});
-          toast({ title: "Chat exported", description: "This chat session was sent to your admin email." });
+          toast({
+            title: "Chat exported",
+            description: "This chat session was sent to your admin email.",
+          });
         } catch {
-          toast({ title: "Unable to export chat", description: "Please try again.", variant: "destructive" });
+          toast({
+            title: "Unable to export chat",
+            description: "Please try again.",
+            variant: "destructive",
+          });
         } finally {
           setIsExporting(false);
         }
@@ -571,10 +577,20 @@ export default function AdminPage() {
       onConfirm: async () => {
         setIsExporting(true);
         try {
-          await adminApi.post(`/admin/chats/${chatId}/export/${currentUser.email}`, {});
-          toast({ title: "Chat transcript sent", description: `This chat session was sent to ${currentUser.email}.` });
+          await adminApi.post(
+            `/admin/chats/${chatId}/export/${currentUser.email}`,
+            {},
+          );
+          toast({
+            title: "Chat transcript sent",
+            description: `This chat session was sent to ${currentUser.email}.`,
+          });
         } catch {
-          toast({ title: "Unable to send chat", description: "Please try again.", variant: "destructive" });
+          toast({
+            title: "Unable to send chat",
+            description: "Please try again.",
+            variant: "destructive",
+          });
         } finally {
           setIsExporting(false);
         }
@@ -586,7 +602,8 @@ export default function AdminPage() {
     if (!currentUser) return;
     confirmation.showConfirmation({
       title: "Export all conversations?",
-      message: "We'll send a single transcript containing every session for this visitor to your admin email.",
+      message:
+        "We'll send a single transcript containing every session for this visitor to your admin email.",
       confirmText: "Export all",
       cancelText: "Cancel",
       variant: "info",
@@ -594,9 +611,17 @@ export default function AdminPage() {
         setIsExporting(true);
         try {
           await adminApi.post(`/admin/users/${currentUser.id}/export`, {});
-          toast({ title: "Conversations exported", description: "The full visitor history was sent to your admin email." });
+          toast({
+            title: "Conversations exported",
+            description:
+              "The full visitor history was sent to your admin email.",
+          });
         } catch {
-          toast({ title: "Unable to export conversations", description: "Please try again.", variant: "destructive" });
+          toast({
+            title: "Unable to export conversations",
+            description: "Please try again.",
+            variant: "destructive",
+          });
         } finally {
           setIsExporting(false);
         }
@@ -678,9 +703,13 @@ export default function AdminPage() {
           return;
         }
         setConversations((previous) =>
-          previous.filter((conversation) => conversation.id !== targetConversationId),
+          previous.filter(
+            (conversation) => conversation.id !== targetConversationId,
+          ),
         );
-        if (targetConversationId === conversations[conversations.length - 1]?.id) {
+        if (
+          targetConversationId === conversations[conversations.length - 1]?.id
+        ) {
           setSelectedUserId(null);
           setIsChatFocused(false);
         }
@@ -694,10 +723,13 @@ export default function AdminPage() {
 
   const handleDeleteUser = () => {
     if (!currentUser) return;
-    if (conversations.some((conversation) => conversation.status !== "closed")) {
+    if (
+      conversations.some((conversation) => conversation.status !== "closed")
+    ) {
       toast({
         title: "End active chats first",
-        description: "A visitor cannot be deleted while they have an active chat.",
+        description:
+          "A visitor cannot be deleted while they have an active chat.",
         variant: "destructive",
       });
       return;
@@ -712,23 +744,36 @@ export default function AdminPage() {
         try {
           await adminApi.delete(`/admin/users/${currentUser.id}`);
         } catch (error: any) {
-          toast({ title: "Unable to delete visitor", description: error?.response?.data?.error || "Please try again.", variant: "destructive" });
+          toast({
+            title: "Unable to delete visitor",
+            description: error?.response?.data?.error || "Please try again.",
+            variant: "destructive",
+          });
           return;
         }
-        setUsers((previous) => previous.filter((candidate) => candidate.id !== currentUser.id));
+        setUsers((previous) =>
+          previous.filter((candidate) => candidate.id !== currentUser.id),
+        );
         setSelectedUserId(null);
         setIsChatFocused(false);
-        toast({ title: "Visitor deleted", description: "Their conversations and messages were permanently removed." });
+        toast({
+          title: "Visitor deleted",
+          description:
+            "Their conversations and messages were permanently removed.",
+        });
       },
     });
   };
 
   const handleDeleteAllConversations = () => {
     if (!currentUser) return;
-    if (conversations.some((conversation) => conversation.status !== "closed")) {
+    if (
+      conversations.some((conversation) => conversation.status !== "closed")
+    ) {
       toast({
         title: "End active chats first",
-        description: "Conversation history can only be deleted after every chat is closed.",
+        description:
+          "Conversation history can only be deleted after every chat is closed.",
         variant: "destructive",
       });
       return;
@@ -743,12 +788,20 @@ export default function AdminPage() {
         try {
           await adminApi.delete(`/admin/users/${currentUser.id}/conversations`);
         } catch (error: any) {
-          toast({ title: "Unable to delete conversations", description: error?.response?.data?.error || "Please try again.", variant: "destructive" });
+          toast({
+            title: "Unable to delete conversations",
+            description: error?.response?.data?.error || "Please try again.",
+            variant: "destructive",
+          });
           return;
         }
         setConversations([]);
         clearMessages();
-        toast({ title: "Conversations deleted", description: "All sessions for this visitor were permanently removed." });
+        toast({
+          title: "Conversations deleted",
+          description:
+            "All sessions for this visitor were permanently removed.",
+        });
       },
     });
   };
@@ -825,7 +878,7 @@ export default function AdminPage() {
   );
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="flex h-screen overflow-hidden bg-slate-100 text-slate-900 [&_button:not(:disabled)]:cursor-pointer [&_button:disabled]:cursor-not-allowed dark:bg-slate-950 dark:text-slate-100">
       {/* Sidebar Overlay for Mobile */}
       {sidebarOpen && (
         <div
@@ -938,7 +991,7 @@ export default function AdminPage() {
                 onClick={() => {
                   handleSelectUser(u.id);
                 }}
-                className={`mb-1 flex w-full items-center gap-3 rounded-xl p-3 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 ${
+                className={`mb-1 flex w-full items-center gap-3 rounded-xl p-3 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 cursor-pointer ${
                   selectedUserId === u.id
                     ? "bg-primary/10 shadow-sm"
                     : "hover:bg-slate-100 dark:hover:bg-slate-800"
@@ -1034,7 +1087,7 @@ export default function AdminPage() {
                 )}
                 <button
                   onClick={openDetails}
-                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white xl:hidden"
+                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white xl:hidden cursor-pointer"
                   aria-label="Open customer details"
                 >
                   <Info size={19} />
@@ -1055,17 +1108,6 @@ export default function AdminPage() {
                             className={`${active ? "bg-slate-100 dark:bg-slate-800" : ""} w-full rounded-lg px-3 py-2 text-left text-sm cursor-pointer flex items-center gap-2`}
                           >
                             Close
-                          </button>
-                        )}
-                      </MenuItem>
-                      <MenuItem>
-                        {({ active }: any) => (
-                          <button
-                            onClick={openDetails}
-                            className={`${active ? "bg-slate-100 dark:bg-slate-800" : ""} w-full rounded-lg px-3 py-2 text-left text-sm cursor-pointer flex items-center gap-2`}
-                          >
-                            <UserIcon />
-                            View Profile
                           </button>
                         )}
                       </MenuItem>
@@ -1114,8 +1156,12 @@ export default function AdminPage() {
                           <button
                             onClick={handleDeleteAllConversations}
                             disabled={hasActiveConversation}
-                            title={hasActiveConversation ? "End every active chat before deleting history" : undefined}
-                            className={`${active ? "bg-red-50 dark:bg-red-950/30" : ""} flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-red-600 disabled:cursor-not-allowed disabled:opacity-45`}
+                            title={
+                              hasActiveConversation
+                                ? "End every active chat before deleting history"
+                                : undefined
+                            }
+                            className={`${active ? "bg-red-50 dark:bg-red-950/30" : ""} flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-red-600 disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer`}
                           >
                             <Trash2 size={16} />
                             Delete conversation history
@@ -1153,18 +1199,60 @@ export default function AdminPage() {
                           className="flex items-center gap-2 rounded-full px-2 py-0.5 transition hover:text-slate-700 dark:hover:text-slate-200"
                           onClick={() => {
                             if (isCurrent) return;
-                            setMinimized((prev) => ({ ...prev, [conv.id]: !isMinimized }));
+                            setMinimized((prev) => ({
+                              ...prev,
+                              [conv.id]: !isMinimized,
+                            }));
                           }}
                         >
                           <Archive size={13} aria-hidden="true" />
-                          {isMinimized ? "Show earlier conversation" : isCurrent ? "Current conversation" : "Hide earlier conversation"}
-                          {!isCurrent && <span className="text-slate-400">· {formatDateTime(conv.createdAt)}</span>}
-                          {!isCurrent && <ChevronDown className={`h-3 w-3 transition-transform ${isMinimized ? "" : "rotate-180"}`} aria-hidden="true" />}
+                          {isMinimized
+                            ? "Show earlier conversation"
+                            : isCurrent
+                              ? "Current conversation"
+                              : "Hide earlier conversation"}
+                          {!isCurrent && (
+                            <span className="text-slate-400">
+                              · {formatDateTime(conv.createdAt)}
+                            </span>
+                          )}
+                          {!isCurrent && (
+                            <ChevronDown
+                              className={`h-3 w-3 transition-transform ${isMinimized ? "" : "rotate-180"}`}
+                              aria-hidden="true"
+                            />
+                          )}
                         </button>
                         <span className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
-                        <button type="button" onClick={() => handleExportChat(conv.id)} className="rounded-full p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-primary dark:hover:bg-slate-800" aria-label="Export this chat" title="Export this chat"><Download size={13} /></button>
-                        <button type="button" onClick={() => handleSendChat(conv.id)} className="rounded-full p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-primary dark:hover:bg-slate-800" aria-label="Send this chat transcript" title="Send this chat transcript"><Send size={13} /></button>
-                        {conv.status === "closed" && <button type="button" onClick={() => handleDeleteConversation(conv.id)} className="rounded-full p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30" aria-label="Delete this closed conversation" title="Delete this closed conversation"><Trash2 size={13} /></button>}
+                        <button
+                          type="button"
+                          onClick={() => handleExportChat(conv.id)}
+                          className="rounded-full p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-primary dark:hover:bg-slate-800"
+                          aria-label="Export this chat"
+                          title="Export this chat"
+                        >
+                          <Download size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSendChat(conv.id)}
+                          className="rounded-full p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-primary dark:hover:bg-slate-800"
+                          aria-label="Send this chat transcript"
+                          title="Send this chat transcript"
+                        >
+                          <Send size={13} />
+                        </button>
+                        {conv.status === "closed" && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteConversation(conv.id)}
+                            className="rounded-full p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30"
+                            aria-label="Delete this closed conversation"
+                            title="Delete this closed conversation"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
                       </div>
                       {!isMinimized && (
                         <div>
@@ -1201,7 +1289,7 @@ export default function AdminPage() {
                                   </div>
                                 )}
                                 <div
-                                  className={`flex items-end gap-2 ${isGrouped ? "mt-1" : "mt-4"} ${isAdmin ? "ml-auto flex-row-reverse" : "mr-auto"}`}
+                                  className={`flex items-end gap-2 ${isGrouped ? "mt-1" : "mt-4"} ${isAdmin || isAI ? "ml-auto flex-row-reverse" : "mr-auto"}`}
                                 >
                                   <div className="w-7 shrink-0">
                                     {!isGrouped && (
@@ -1211,7 +1299,7 @@ export default function AdminPage() {
                                           isAdmin
                                             ? "/images/logo.png"
                                             : isAI
-                                                ? "https://api.dicebear.com/10.x/bottts-neutral/svg?seed=Nadia"
+                                              ? "https://api.dicebear.com/10.x/bottts-neutral/svg?seed=Nadia"
                                               : `https://api.dicebear.com/9.x/notionists-neutral/svg?seed=${currentUser.id}`
                                         }
                                         alt=""
@@ -1223,7 +1311,7 @@ export default function AdminPage() {
                                       isAdmin
                                         ? "rounded-br-md bg-primary text-white"
                                         : isAI
-                                          ? "rounded-bl-md border border-violet-200 bg-violet-50 text-violet-950 dark:border-violet-900/70 dark:bg-violet-950/35 dark:text-violet-100"
+                                          ? "rounded-br-md border border-violet-200 bg-violet-50 text-violet-950 dark:border-violet-900/70 dark:bg-violet-950/35 dark:text-violet-100"
                                           : "rounded-bl-md border border-slate-200 bg-white text-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
                                     }`}
                                     style={{
@@ -1507,7 +1595,7 @@ export default function AdminPage() {
 
           {false && detailsOpen && (
             <>
-            {/*
+              {/*
             <div
               className="fixed inset-0 z-50"
               role="dialog"

@@ -63,7 +63,7 @@ export function ConfirmationModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="presentation">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 [&_button:not(:disabled)]:cursor-pointer [&_button:disabled]:cursor-not-allowed" role="presentation">
       <div role="dialog" aria-modal="true" aria-labelledby="confirmation-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in dark:bg-slate-800">
         <div className="flex flex-col items-center text-center">
           {/* Icon */}
