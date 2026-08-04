@@ -27,7 +27,10 @@ import {
 import {
   Archive,
   ArrowUp,
+  CheckSquare,
   ChevronDown,
+  Clock3,
+  Copy,
   Download,
   EllipsisVertical,
   Info,
@@ -38,8 +41,10 @@ import {
   MessageCircleX,
   MessageSquare,
   Phone,
+  Pin,
   Search,
   Send,
+  Star,
   Trash2,
   X,
 } from "lucide-react";
@@ -96,7 +101,15 @@ export default function AdminPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<
-    { id: string; messages: Message[]; createdAt: string; status: string }[]
+    {
+      id: string;
+      messages: Message[];
+      createdAt: string;
+      status: string;
+      isPinned?: number;
+      isStarred?: number;
+      snoozedUntil?: string | null;
+    }[]
   >([]);
   const [conversationUnreadCounts, setConversationUnreadCounts] = useState<
     Record<string, number>
@@ -109,6 +122,15 @@ export default function AdminPage() {
     "all",
   );
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [selectedConversationIds, setSelectedConversationIds] = useState<
+    string[]
+  >([]);
+  const [searchResults, setSearchResults] = useState<{
+    users: User[];
+    messages: any[];
+  }>({ users: [], messages: [] });
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [commandQuery, setCommandQuery] = useState("");
 
   const [input, setInput] = useState("");
   const [isFocus, setFocus] = useState(false);
@@ -347,6 +369,45 @@ export default function AdminPage() {
     } else setFilteredUsers(users);
   }, [searchQuery, users]);
 
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (query.length < 2) {
+      setSearchResults({ users: [], messages: [] });
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await adminApi.get("/admin/search", {
+          params: { q: query },
+        });
+        setSearchResults(response.data);
+      } catch {
+        // Local visitor filtering remains available when the optional search request fails.
+      }
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isTyping = target?.matches(
+        "input, textarea, [contenteditable='true'], .ql-editor",
+      );
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandOpen((open) => !open);
+      }
+      if (!isTyping && event.key.toLowerCase() === "r" && selectedUserId) {
+        event.preventDefault();
+        document.querySelector<HTMLElement>(".ql-editor")?.focus();
+      }
+      if (event.key === "Escape") setCommandOpen(false);
+    };
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, [selectedUserId]);
+
   // Fetch conversations
   useEffect(() => {
     if (!selectedUserId) {
@@ -467,6 +528,92 @@ export default function AdminPage() {
       Console.error(err);
     } finally {
       setIsSendingMessage(false);
+    }
+  };
+
+  const updateInboxState = async (
+    conversationId: string,
+    update: Record<string, unknown>,
+  ) => {
+    try {
+      const response = await adminApi.patch(
+        `/admin/chats/${conversationId}/inbox`,
+        update,
+      );
+      const updated = response.data;
+      setConversations((previous) =>
+        previous.map((conversation) =>
+          conversation.id === conversationId
+            ? { ...conversation, ...updated }
+            : conversation,
+        ),
+      );
+      setUsers((previous) =>
+        previous.map((visitor: any) =>
+          visitor.latestConversationId === conversationId
+            ? { ...visitor, ...updated }
+            : visitor,
+        ),
+      );
+      toast({ title: "Conversation updated" });
+    } catch (error: any) {
+      toast({
+        title: "Unable to update conversation",
+        description: error?.response?.data?.error || "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const applyBulkAction = async (
+    action: "pin" | "unpin" | "star" | "unstar" | "archive" | "reopen",
+  ) => {
+    if (!selectedConversationIds.length) return;
+    try {
+      const response = await adminApi.post("/admin/chats/bulk", {
+        conversationIds: selectedConversationIds,
+        action,
+      });
+      setUsers((previous) =>
+        previous.map((visitor: any) =>
+          selectedConversationIds.includes(visitor.latestConversationId)
+            ? {
+                ...visitor,
+                ...(action === "pin"
+                  ? { isPinned: 1 }
+                  : action === "unpin"
+                    ? { isPinned: 0 }
+                    : action === "star"
+                      ? { isStarred: 1 }
+                      : action === "unstar"
+                        ? { isStarred: 0 }
+                        : {
+                            latestConversationStatus:
+                              action === "archive" ? "archived" : "open",
+                          }),
+              }
+            : visitor,
+        ),
+      );
+      setSelectedConversationIds([]);
+      toast({
+        title: `${response.data.updated} conversation${response.data.updated === 1 ? "" : "s"} updated`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Bulk action failed",
+        description: error?.response?.data?.error || "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const copyText = async (text: string, label = "Copied to clipboard") => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ title: label });
+    } catch {
+      toast({ title: "Unable to copy", variant: "destructive" });
     }
   };
 
@@ -905,6 +1052,15 @@ export default function AdminPage() {
             </h1>
           </div>
           <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setCommandOpen(true)}
+              aria-label="Open command palette"
+              title="Command palette (⌘/Ctrl K)"
+              className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
+            >
+              <Search size={18} />
+            </button>
             <DarkModeToggle />
             <button
               onClick={handleLogout}
@@ -937,6 +1093,27 @@ export default function AdminPage() {
               className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10 dark:border-slate-700 dark:bg-slate-800 dark:focus:bg-slate-800"
             />
           </label>
+          {searchQuery.trim().length >= 2 &&
+            searchResults.messages.length > 0 && (
+              <div
+                className="mt-2 max-h-36 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 text-xs shadow-sm dark:border-slate-700 dark:bg-slate-900"
+                aria-label="Matching messages"
+              >
+                <p className="px-2 py-1 font-medium text-slate-400">Messages</p>
+                {searchResults.messages.slice(0, 4).map((result) => (
+                  <button
+                    key={result.id}
+                    type="button"
+                    onClick={() => {
+                      handleSelectUser(result.userId);
+                      setSearchQuery("");
+                    }}
+                    className="block w-full truncate rounded-md px-2 py-1.5 text-left text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                    dangerouslySetInnerHTML={{ __html: result.snippet }}
+                  />
+                ))}
+              </div>
+            )}
           <div
             className="mt-3 flex items-center gap-1"
             role="group"
@@ -961,6 +1138,45 @@ export default function AdminPage() {
               {visibleUsers.length}
             </span>
           </div>
+          {selectedConversationIds.length > 0 && (
+            <div
+              className="mt-2 flex items-center gap-1 rounded-lg bg-primary/10 p-1 text-xs text-primary"
+              role="toolbar"
+              aria-label="Bulk conversation actions"
+            >
+              <span className="px-1.5 font-semibold">
+                {selectedConversationIds.length}
+              </span>
+              <button
+                type="button"
+                onClick={() => applyBulkAction("pin")}
+                title="Pin selected"
+              >
+                <Pin size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => applyBulkAction("star")}
+                title="Star selected"
+              >
+                <Star size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => applyBulkAction("archive")}
+                title="Archive selected"
+              >
+                <Archive size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedConversationIds([])}
+                className="ml-auto px-1.5"
+              >
+                Clear
+              </button>
+            </div>
+          )}
         </div>
 
         {/* User List */}
@@ -1009,8 +1225,22 @@ export default function AdminPage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between">
-                    <p className="truncate text-sm font-semibold">
+                    <p className="flex min-w-0 items-center gap-1 truncate text-sm font-semibold">
                       {getDisplayName(u)}
+                      {(u as any).isPinned === 1 && (
+                        <Pin
+                          size={12}
+                          className="shrink-0 text-primary"
+                          aria-label="Pinned"
+                        />
+                      )}
+                      {(u as any).isStarred === 1 && (
+                        <Star
+                          size={12}
+                          className="shrink-0 fill-amber-400 text-amber-400"
+                          aria-label="Starred"
+                        />
+                      )}
                     </p>
                     {conversationUnreadCounts[u.id] > 0 && (
                       <span className="ml-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-white">
@@ -1024,6 +1254,28 @@ export default function AdminPage() {
                       : u.email}
                   </p>
                 </div>
+                {(u as any).latestConversationId && (
+                  <span
+                    role="checkbox"
+                    aria-checked={selectedConversationIds.includes(
+                      (u as any).latestConversationId,
+                    )}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setSelectedConversationIds((previous) =>
+                        previous.includes((u as any).latestConversationId)
+                          ? previous.filter(
+                              (id) => id !== (u as any).latestConversationId,
+                            )
+                          : [...previous, (u as any).latestConversationId],
+                      );
+                    }}
+                    className={`grid h-5 w-5 shrink-0 place-items-center rounded border ${selectedConversationIds.includes((u as any).latestConversationId) ? "border-primary bg-primary text-white" : "border-slate-300 text-transparent"}`}
+                    aria-label={`Select ${getDisplayName(u)}`}
+                  >
+                    <CheckSquare size={13} />
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -1074,6 +1326,11 @@ export default function AdminPage() {
                       className={`h-1.5 w-1.5 rounded-full ${isUserOnline ? "bg-emerald-500" : "bg-slate-400"}`}
                     />
                     {isUserOnline ? "Online now" : "Away"}
+                    {activeConversation?.status === "archived" && (
+                      <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                        Archived
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -1084,6 +1341,88 @@ export default function AdminPage() {
                   <span className="text-xs flex items-center gap-1">
                     <Loader2 size={15} className="animate-spin" /> Exporting...
                   </span>
+                )}
+                {activeConversation && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateInboxState(activeConversation.id, {
+                          isPinned: !activeConversation.isPinned,
+                        })
+                      }
+                      className={`rounded-lg p-2 transition hover:bg-slate-100 dark:hover:bg-slate-800 ${activeConversation.isPinned ? "text-primary" : "text-slate-500"}`}
+                      aria-label={
+                        activeConversation.isPinned
+                          ? "Unpin conversation"
+                          : "Pin conversation"
+                      }
+                      title={
+                        activeConversation.isPinned
+                          ? "Unpin conversation"
+                          : "Pin conversation"
+                      }
+                    >
+                      <Pin size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateInboxState(activeConversation.id, {
+                          isStarred: !activeConversation.isStarred,
+                        })
+                      }
+                      className={`rounded-lg p-2 transition hover:bg-slate-100 dark:hover:bg-slate-800 ${activeConversation.isStarred ? "text-amber-500" : "text-slate-500"}`}
+                      aria-label={
+                        activeConversation.isStarred
+                          ? "Remove star"
+                          : "Star conversation"
+                      }
+                      title={
+                        activeConversation.isStarred
+                          ? "Remove star"
+                          : "Star conversation"
+                      }
+                    >
+                      <Star
+                        size={18}
+                        className={
+                          activeConversation.isStarred
+                            ? "fill-current"
+                            : undefined
+                        }
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateInboxState(activeConversation.id, {
+                          snoozedUntil: new Date(
+                            Date.now() + 24 * 60 * 60 * 1000,
+                          ).toISOString(),
+                        })
+                      }
+                      className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
+                      aria-label="Snooze for one day"
+                      title="Snooze for one day"
+                    >
+                      <Clock3 size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        copyText(
+                          `${window.location.origin}/admin?conversation=${activeConversation.id}`,
+                          "Conversation link copied",
+                        )
+                      }
+                      className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
+                      aria-label="Copy conversation link"
+                      title="Copy conversation link"
+                    >
+                      <Copy size={18} />
+                    </button>
+                  </>
                 )}
                 <button
                   onClick={openDetails}
@@ -1136,6 +1475,31 @@ export default function AdminPage() {
                           </button>
                         )}
                       </MenuItem>
+
+                      {activeConversation &&
+                        activeConversation.status !== "closed" && (
+                          <MenuItem>
+                            {({ active }: any) => (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateInboxState(activeConversation.id, {
+                                    status:
+                                      activeConversation.status === "archived"
+                                        ? "open"
+                                        : "archived",
+                                  })
+                                }
+                                className={`${active ? "bg-slate-100 dark:bg-slate-800" : ""} flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm cursor-pointer`}
+                              >
+                                <Archive size={16} />{" "}
+                                {activeConversation.status === "archived"
+                                  ? "Reopen conversation"
+                                  : "Archive conversation"}
+                              </button>
+                            )}
+                          </MenuItem>
+                        )}
 
                       {conversations[conversations.length - 1]?.status !==
                         "closed" && (
@@ -1337,17 +1701,33 @@ export default function AdminPage() {
                                       }}
                                     />
 
-                                    <span
-                                      className={`mt-1 self-end text-[10px] ${isAdmin ? "text-white/70" : "text-slate-400"}`}
-                                    >
-                                      {new Date(
-                                        msg.timestamp,
-                                      ).toLocaleTimeString("en-GB", {
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                        hour12: true,
-                                      })}
-                                    </span>
+                                    <div className="mt-1 flex items-center justify-end gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          copyText(
+                                            msg.content.replace(/<[^>]+>/g, ""),
+                                            "Message copied",
+                                          )
+                                        }
+                                        className={`rounded p-1 opacity-60 transition hover:opacity-100 ${isAdmin ? "hover:bg-white/15" : "hover:bg-slate-200 dark:hover:bg-slate-800"}`}
+                                        aria-label="Copy message"
+                                        title="Copy message"
+                                      >
+                                        <Copy size={12} />
+                                      </button>
+                                      <span
+                                        className={`text-[10px] ${isAdmin ? "text-white/70" : "text-slate-400"}`}
+                                      >
+                                        {new Date(
+                                          msg.timestamp,
+                                        ).toLocaleTimeString("en-GB", {
+                                          hour: "2-digit",
+                                          minute: "2-digit",
+                                          hour12: true,
+                                        })}
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -1577,6 +1957,7 @@ export default function AdminPage() {
             user={currentUser}
             isOnline={Boolean(isUserOnline)}
             conversationStatus={activeConversation?.status}
+            conversationId={activeConversation?.id}
             messageCount={activeMessageCount}
             isOpen={detailsOpen}
             onClose={() => setDetailsOpen(false)}
@@ -1773,6 +2154,110 @@ export default function AdminPage() {
             </>
           )}
         </>
+      )}
+
+      {commandOpen && (
+        <div
+          className="fixed inset-0 z-60 flex items-start justify-center bg-slate-950/45 p-4 pt-[12vh]"
+          role="presentation"
+          onMouseDown={() => setCommandOpen(false)}
+        >
+          <section
+            className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Command palette"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <label className="flex items-center gap-2 border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+              <Search size={18} className="text-slate-400" />
+              <span className="sr-only">Search commands</span>
+              <input
+                autoFocus
+                value={commandQuery}
+                onChange={(event) => setCommandQuery(event.target.value)}
+                placeholder="Type a command…"
+                className="w-full bg-transparent text-sm outline-none"
+              />
+            </label>
+            <div className="p-1 text-sm">
+              {[
+                [
+                  "Reply",
+                  "R",
+                  () => {
+                    document.querySelector<HTMLElement>(".ql-editor")?.focus();
+                    setCommandOpen(false);
+                  },
+                ],
+                [
+                  "Copy conversation link",
+                  "",
+                  () => {
+                    if (activeConversation)
+                      copyText(
+                        `${window.location.origin}/admin?conversation=${activeConversation.id}`,
+                        "Conversation link copied",
+                      );
+                    setCommandOpen(false);
+                  },
+                ],
+                [
+                  activeConversation?.status === "archived"
+                    ? "Reopen conversation"
+                    : "Archive conversation",
+                  "",
+                  () => {
+                    if (activeConversation)
+                      updateInboxState(activeConversation.id, {
+                        status:
+                          activeConversation.status === "archived"
+                            ? "open"
+                            : "archived",
+                      });
+                    setCommandOpen(false);
+                  },
+                ],
+                [
+                  activeConversation?.isStarred
+                    ? "Remove star"
+                    : "Star conversation",
+                  "",
+                  () => {
+                    if (activeConversation)
+                      updateInboxState(activeConversation.id, {
+                        isStarred: !activeConversation.isStarred,
+                      });
+                    setCommandOpen(false);
+                  },
+                ],
+              ]
+                .filter(([label]) =>
+                  String(label)
+                    .toLowerCase()
+                    .includes(commandQuery.toLowerCase()),
+                )
+                .map(([label, shortcut, action]) => (
+                  <button
+                    key={String(label)}
+                    type="button"
+                    onClick={action as () => void}
+                    className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    <span>{String(label)}</span>
+                    {shortcut && (
+                      <kbd className="rounded border border-slate-200 px-1.5 text-xs text-slate-400 dark:border-slate-700">
+                        {String(shortcut)}
+                      </kbd>
+                    )}
+                  </button>
+                ))}
+            </div>
+            <p className="px-3 pb-2 text-xs text-slate-400">
+              Press Esc to close · ⌘/Ctrl K to toggle
+            </p>
+          </section>
+        </div>
       )}
 
       <ConfirmationModal

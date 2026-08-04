@@ -3,6 +3,8 @@ import { openDB } from "../db.js";
 import { authenticateAdmin } from "../middleware/adminAuth.js";
 import { sendEmail, exportConversation } from "../utils/email/email.js";
 import { recordAuditEvent } from "../utils/audit.js";
+import { searchMessages } from "../services/messageSearchService.js";
+import { randomUUID } from "crypto";
 
 const router = Router();
 
@@ -13,7 +15,19 @@ router.get("/users", async (req, res) => {
   try {
     const db = await openDB();
     const users = await db.all(
-      "SELECT * FROM users WHERE tenantId = ? ORDER BY createdAt DESC",
+      `SELECT u.*,
+         (SELECT c.id FROM conversations c WHERE c.userId = u.id AND c.tenantId = u.tenantId
+          ORDER BY COALESCE(c.lastMessageAt, c.createdAt) DESC, c.id DESC LIMIT 1) AS latestConversationId,
+         (SELECT c.status FROM conversations c WHERE c.userId = u.id AND c.tenantId = u.tenantId
+          ORDER BY COALESCE(c.lastMessageAt, c.createdAt) DESC, c.id DESC LIMIT 1) AS latestConversationStatus,
+         COALESCE((SELECT c.isPinned FROM conversations c WHERE c.userId = u.id AND c.tenantId = u.tenantId
+          ORDER BY COALESCE(c.lastMessageAt, c.createdAt) DESC, c.id DESC LIMIT 1), 0) AS isPinned,
+         COALESCE((SELECT c.isStarred FROM conversations c WHERE c.userId = u.id AND c.tenantId = u.tenantId
+          ORDER BY COALESCE(c.lastMessageAt, c.createdAt) DESC, c.id DESC LIMIT 1), 0) AS isStarred,
+         (SELECT c.snoozedUntil FROM conversations c WHERE c.userId = u.id AND c.tenantId = u.tenantId
+          ORDER BY COALESCE(c.lastMessageAt, c.createdAt) DESC, c.id DESC LIMIT 1) AS snoozedUntil
+       FROM users u WHERE u.tenantId = ?
+       ORDER BY isPinned DESC, isStarred DESC, u.createdAt DESC`,
       [req.admin.tenantId],
     );
     res.json(users || []);
@@ -153,6 +167,169 @@ router.get("/conversations/:userId", async (req, res) => {
   } catch (error) {
     console.error("Error fetching conversations:", error);
     res.status(500).json({ error: error || "Failed to fetch conversations" });
+  }
+});
+
+router.patch("/chats/:id/inbox", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isPinned, isStarred, snoozedUntil, status } = req.body || {};
+    const allowedStatuses = new Set(["open", "archived"]);
+    if (status !== undefined && !allowedStatuses.has(status)) {
+      return res.status(400).json({ error: "Invalid inbox status" });
+    }
+    if (snoozedUntil !== undefined && snoozedUntil !== null && Number.isNaN(Date.parse(snoozedUntil))) {
+      return res.status(400).json({ error: "Invalid snooze time" });
+    }
+
+    const db = await openDB();
+    const conversation = await db.get(
+      "SELECT * FROM conversations WHERE id = ? AND tenantId = ?",
+      [id, req.admin.tenantId],
+    );
+    if (!conversation) return res.status(404).json({ error: "Chat not found" });
+    if (status === "open") {
+      const existingOpen = await db.get(
+        "SELECT id FROM conversations WHERE tenantId = ? AND userId = ? AND status = 'open' AND id != ?",
+        [req.admin.tenantId, conversation.userId, id],
+      );
+      if (existingOpen) return res.status(409).json({ error: "This visitor already has an active chat" });
+    }
+
+    const next = {
+      isPinned: isPinned === undefined ? conversation.isPinned : Number(Boolean(isPinned)),
+      isStarred: isStarred === undefined ? conversation.isStarred : Number(Boolean(isStarred)),
+      snoozedUntil: snoozedUntil === undefined ? conversation.snoozedUntil : snoozedUntil,
+      status: status === undefined ? conversation.status : status,
+    };
+    await db.run(
+      `UPDATE conversations SET isPinned = ?, isStarred = ?, snoozedUntil = ?, status = ?
+       WHERE id = ? AND tenantId = ?`,
+      [next.isPinned, next.isStarred, next.snoozedUntil, next.status, id, req.admin.tenantId],
+    );
+    const updated = await db.get("SELECT * FROM conversations WHERE id = ? AND tenantId = ?", [id, req.admin.tenantId]);
+    await recordAuditEvent(db, {
+      tenantId: req.admin.tenantId, actorId: req.admin.id, actorRole: req.admin.role,
+      action: "admin.chat.inbox_updated", resourceType: "conversation", resourceId: id,
+      metadata: { isPinned: updated.isPinned, isStarred: updated.isStarred, status: updated.status },
+    });
+    res.json(updated);
+  } catch (error) {
+    console.error("Error updating inbox state:", error);
+    res.status(500).json({ error: "Failed to update inbox state" });
+  }
+});
+
+router.post("/chats/bulk", async (req, res) => {
+  try {
+    const { conversationIds, action } = req.body || {};
+    if (!Array.isArray(conversationIds) || !conversationIds.length || conversationIds.length > 100) {
+      return res.status(400).json({ error: "Select between 1 and 100 chats" });
+    }
+    const updates = {
+      pin: "isPinned = 1", unpin: "isPinned = 0", star: "isStarred = 1", unstar: "isStarred = 0",
+      archive: "status = 'archived'", reopen: "status = 'open'",
+    };
+    if (!updates[action]) return res.status(400).json({ error: "Invalid bulk action" });
+    const db = await openDB();
+    const placeholders = conversationIds.map(() => "?").join(", ");
+    if (action === "reopen") {
+      const conflicts = await db.get(
+        `SELECT COUNT(*) AS count FROM conversations c
+         WHERE c.id IN (${placeholders}) AND c.tenantId = ? AND EXISTS (
+           SELECT 1 FROM conversations open_chat
+           WHERE open_chat.tenantId = c.tenantId AND open_chat.userId = c.userId
+             AND open_chat.status = 'open' AND open_chat.id != c.id
+         )`,
+        [...conversationIds, req.admin.tenantId],
+      );
+      if (conflicts.count) return res.status(409).json({ error: "Some visitors already have an active chat" });
+    }
+    const result = await db.run(
+      `UPDATE conversations SET ${updates[action]} WHERE id IN (${placeholders}) AND tenantId = ?`,
+      [...conversationIds, req.admin.tenantId],
+    );
+    await recordAuditEvent(db, {
+      tenantId: req.admin.tenantId, actorId: req.admin.id, actorRole: req.admin.role,
+      action: "admin.chat.bulk_updated", resourceType: "conversation", metadata: { action, count: result.changes },
+    });
+    res.json({ success: true, updated: result.changes });
+  } catch (error) {
+    console.error("Error applying bulk inbox action:", error);
+    res.status(500).json({ error: "Failed to update chats" });
+  }
+});
+
+router.get("/search", async (req, res) => {
+  try {
+    const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (!query) return res.json({ users: [], messages: [] });
+    const db = await openDB();
+    const users = await db.all(
+      `SELECT id, firstName, lastName, email, country FROM users
+       WHERE tenantId = ? AND (firstName LIKE ? OR lastName LIKE ? OR email LIKE ?)
+       ORDER BY createdAt DESC LIMIT 12`,
+      [req.admin.tenantId, `%${query}%`, `%${query}%`, `%${query}%`],
+    );
+    const messages = await searchMessages(db, { tenantId: req.admin.tenantId, query, limit: 20 });
+    res.json({ users, messages });
+  } catch (error) {
+    console.error("Error searching inbox:", error);
+    res.status(500).json({ error: "Failed to search inbox" });
+  }
+});
+
+router.get("/chats/:id/context", async (req, res) => {
+  try {
+    const db = await openDB();
+    const conversation = await db.get("SELECT id FROM conversations WHERE id = ? AND tenantId = ?", [req.params.id, req.admin.tenantId]);
+    if (!conversation) return res.status(404).json({ error: "Chat not found" });
+    const [tags, notes, statistics] = await Promise.all([
+      db.all("SELECT tag FROM conversation_tags WHERE conversationId = ? AND tenantId = ? ORDER BY tag", [conversation.id, req.admin.tenantId]),
+      db.all("SELECT id, content, createdAt FROM conversation_notes WHERE conversationId = ? AND tenantId = ? ORDER BY createdAt DESC LIMIT 20", [conversation.id, req.admin.tenantId]),
+      db.get("SELECT COUNT(*) AS messageCount, MIN(timestamp) AS firstMessageAt, MAX(timestamp) AS lastMessageAt FROM messages WHERE conversationId = ?", [conversation.id]),
+    ]);
+    res.json({ tags: tags.map((row) => row.tag), notes, statistics });
+  } catch (error) {
+    console.error("Error loading chat context:", error);
+    res.status(500).json({ error: "Failed to load chat context" });
+  }
+});
+
+router.put("/chats/:id/tags", async (req, res) => {
+  try {
+    const tags = Array.isArray(req.body?.tags) ? [...new Set(req.body.tags.map((tag) => String(tag).trim().toLowerCase()).filter((tag) => tag && tag.length <= 32))].slice(0, 20) : null;
+    if (!tags) return res.status(400).json({ error: "Tags must be an array" });
+    const db = await openDB();
+    const chat = await db.get("SELECT id FROM conversations WHERE id = ? AND tenantId = ?", [req.params.id, req.admin.tenantId]);
+    if (!chat) return res.status(404).json({ error: "Chat not found" });
+    await db.exec("BEGIN IMMEDIATE");
+    try {
+      await db.run("DELETE FROM conversation_tags WHERE conversationId = ? AND tenantId = ?", [chat.id, req.admin.tenantId]);
+      for (const tag of tags) await db.run("INSERT INTO conversation_tags (conversationId, tenantId, tag) VALUES (?, ?, ?)", [chat.id, req.admin.tenantId, tag]);
+      await db.exec("COMMIT");
+    } catch (error) { await db.exec("ROLLBACK"); throw error; }
+    res.json({ tags });
+  } catch (error) {
+    console.error("Error updating chat tags:", error);
+    res.status(500).json({ error: "Failed to update chat tags" });
+  }
+});
+
+router.post("/chats/:id/notes", async (req, res) => {
+  try {
+    const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
+    if (!content || content.length > 2000) return res.status(400).json({ error: "A note of up to 2,000 characters is required" });
+    const db = await openDB();
+    const chat = await db.get("SELECT id FROM conversations WHERE id = ? AND tenantId = ?", [req.params.id, req.admin.tenantId]);
+    if (!chat) return res.status(404).json({ error: "Chat not found" });
+    const note = { id: randomUUID(), conversationId: chat.id, tenantId: req.admin.tenantId, authorId: req.admin.id, content };
+    await db.run("INSERT INTO conversation_notes (id, conversationId, tenantId, authorId, content) VALUES (?, ?, ?, ?, ?)", [note.id, note.conversationId, note.tenantId, note.authorId, note.content]);
+    await recordAuditEvent(db, { tenantId: req.admin.tenantId, actorId: req.admin.id, actorRole: req.admin.role, action: "admin.chat.note_added", resourceType: "conversation", resourceId: chat.id });
+    res.status(201).json({ ...note, createdAt: new Date().toISOString() });
+  } catch (error) {
+    console.error("Error adding chat note:", error);
+    res.status(500).json({ error: "Failed to add chat note" });
   }
 });
 

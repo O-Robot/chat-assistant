@@ -20,7 +20,7 @@ export async function searchMessages(db, { tenantId, query, limit = 20 }) {
 
   const pageSize = Math.min(Math.max(Number(limit) || 20, 1), MAX_RESULTS);
   return db.all(
-    `SELECT s.messageId AS id, s.conversationId, m.senderId, m.timestamp,
+    `SELECT s.messageId AS id, s.conversationId, c.userId, m.senderId, m.timestamp,
             snippet(message_search, 3, '<mark>', '</mark>', '…', 16) AS snippet
      FROM message_search s
      JOIN messages m ON m.id = s.messageId

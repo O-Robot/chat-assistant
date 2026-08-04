@@ -22,6 +22,7 @@ type CustomerDetailsDrawerProps = {
   user: User | null;
   isOnline: boolean;
   conversationStatus?: string;
+  conversationId?: string;
   messageCount: number;
   isOpen: boolean;
   onClose: () => void;
@@ -44,6 +45,7 @@ export function CustomerDetailsDrawer({
   user,
   isOnline,
   conversationStatus,
+  conversationId,
   messageCount,
   isOpen,
   onClose,
@@ -57,6 +59,9 @@ export function CustomerDetailsDrawer({
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [form, setForm] = useState<Partial<User>>({});
+  const [context, setContext] = useState<{ tags: string[]; notes: { id: string; content: string; createdAt: string }[]; statistics?: { messageCount?: number; firstMessageAt?: string; lastMessageAt?: string } }>({ tags: [], notes: [] });
+  const [tagInput, setTagInput] = useState("");
+  const [noteInput, setNoteInput] = useState("");
 
   useEffect(() => {
     if (isOpen && user) {
@@ -64,6 +69,36 @@ export function CustomerDetailsDrawer({
       setIsEditing(false);
     }
   }, [isOpen, user]);
+
+  useEffect(() => {
+    if (!isOpen || !conversationId) return;
+    adminApi.get(`/admin/chats/${conversationId}/context`)
+      .then((response) => {
+        setContext(response.data);
+        setTagInput(response.data.tags.join(", "));
+      })
+      .catch(() => setContext({ tags: [], notes: [] }));
+  }, [isOpen, conversationId]);
+
+  const saveTags = async () => {
+    if (!conversationId) return;
+    const tags = tagInput.split(",").map((tag) => tag.trim()).filter(Boolean);
+    try {
+      const response = await adminApi.put(`/admin/chats/${conversationId}/tags`, { tags });
+      setContext((previous) => ({ ...previous, tags: response.data.tags }));
+      toast({ title: "Tags updated" });
+    } catch { toast({ title: "Unable to update tags", variant: "destructive" }); }
+  };
+
+  const addNote = async () => {
+    if (!conversationId || !noteInput.trim()) return;
+    try {
+      const response = await adminApi.post(`/admin/chats/${conversationId}/notes`, { content: noteInput });
+      setContext((previous) => ({ ...previous, notes: [response.data, ...previous.notes] }));
+      setNoteInput("");
+      toast({ title: "Internal note added" });
+    } catch { toast({ title: "Unable to add note", variant: "destructive" }); }
+  };
 
   if (!isOpen || !user) return null;
 
@@ -289,6 +324,23 @@ export function CustomerDetailsDrawer({
               </div>
             </div>
           </section>
+          {conversationId && (
+            <section className="space-y-3">
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Context</h3>
+              <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+                <p className="mb-2 text-xs font-medium text-slate-500">Tags</p>
+                <div className="mb-2 flex flex-wrap gap-1">{context.tags.length ? context.tags.map((tag) => <span key={tag} className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">{tag}</span>) : <span className="text-xs text-slate-400">No tags yet</span>}</div>
+                <div className="flex gap-2"><input value={tagInput} onChange={(event) => setTagInput(event.target.value)} placeholder="billing, priority" className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:border-primary dark:border-slate-700 dark:bg-slate-800" /><button type="button" onClick={saveTags} className="rounded-lg bg-slate-100 px-2 text-xs font-medium hover:bg-slate-200 dark:bg-slate-800">Save</button></div>
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+                <p className="mb-2 text-xs font-medium text-slate-500">Internal notes</p>
+                <textarea value={noteInput} onChange={(event) => setNoteInput(event.target.value)} placeholder="Add a private note…" className="min-h-16 w-full rounded-lg border border-slate-200 p-2 text-xs outline-none focus:border-primary dark:border-slate-700 dark:bg-slate-800" />
+                <button type="button" onClick={addNote} disabled={!noteInput.trim()} className="mt-2 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-50">Add note</button>
+                {context.notes.slice(0, 3).map((note) => <div key={note.id} className="mt-3 border-t border-slate-100 pt-2 text-xs dark:border-slate-800"><p className="whitespace-pre-wrap text-slate-700 dark:text-slate-200">{note.content}</p><p className="mt-1 text-slate-400">{formatDateTime(note.createdAt)}</p></div>)}
+              </div>
+              <p className="text-xs text-slate-500">{context.statistics?.messageCount ?? messageCount} messages · Location: {user.country || "Unavailable"}</p>
+            </section>
+          )}
           <section>
             <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
               All conversations

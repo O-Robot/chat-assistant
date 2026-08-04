@@ -13,6 +13,7 @@ This document is a chronological development log for completed project phases.
 | P005 | 2026-07-31 | ✅ Completed | `feat(visitor): polish widget experience and conversation history` |
 | P006 | 2026-07-31 | ✅ Completed | `feat(admin): polish premium support inbox workspace` |
 | P006.1 | 2026-07-31 | ✅ Completed | `fix(admin): stabilise handover and conversation controls` |
+| P007 | 2026-08-04 | ✅ Completed | `feat(admin): add inbox productivity and conversation intelligence` |
 
 <details>
 <summary><strong>P001 — Security Hardening Foundation</strong></summary>
@@ -297,6 +298,59 @@ P007 — Not started.
 
 ```text
 fix(admin): stabilise handover and conversation controls
+```
+
+</details>
+
+<details>
+<summary><strong>P007 — Productivity &amp; Inbox Intelligence</strong></summary>
+
+### Objective
+
+Make the existing admin inbox faster for daily support work without changing the established security, realtime, or layout architecture.
+
+### Productivity and UX Improvements
+
+- Added tenant-scoped pin, star, one-day snooze, archive, and reopen controls to the existing conversation workspace.
+- Added multi-select bulk pin, star, and archive actions in the inbox list.
+- Added a command palette (Cmd/Ctrl + K), reply shortcut (`R`), copy-conversation-link action, and per-message copy action.
+- Added FTS-backed message search results with matching snippets alongside visitor search.
+- Added archived status treatment and pinned/starred indicators in the conversation list.
+
+### Customer Context Improvements
+
+- Added migration-backed conversation tags and internal notes with tenant-scoped API access.
+- Added conversation context in the existing customer details drawer: tags, private notes, message statistics, and available location data.
+
+### Performance and Security Considerations
+
+- Reused the existing FTS message-search index and capped message search results.
+- Added indexed inbox metadata and tenant-scoped tag/note tables through an idempotent migration.
+- All new routes remain behind the existing admin authentication middleware and scope every read/write to the authenticated tenant.
+- Bulk requests are capped at 100 conversations and validate allowed actions.
+
+### Verification Steps
+
+- Ran `node --check` for changed backend modules successfully.
+- Ran `npx tsc --noEmit` successfully in `frontend`.
+- Ran targeted frontend lint: no errors; four pre-existing hook-dependency warnings remain in the admin page.
+- Ran `npm run build` successfully in `frontend`.
+- Checked the working-tree diff for whitespace errors.
+
+### Remaining Known Issues
+
+- The inbox still retrieves the full tenant visitor list; server-side inbox pagination and richer filtering remain the next scalability step.
+- Browser/device data is not currently collected by the visitor client, so the drawer presents only available location/profile data.
+- Attachments are prepared in the data model but have no upload or message-rendering workflow yet.
+
+### Next Phase
+
+P008 — Not started.
+
+### Suggested Conventional Commit
+
+```text
+feat(admin): add inbox productivity and conversation intelligence
 ```
 
 </details>

@@ -105,6 +105,49 @@ const migrations = [
       `);
     },
   },
+  {
+    id: "002_inbox_productivity",
+    async up(db) {
+      const columns = await db.all("PRAGMA table_info(conversations)");
+      if (!columns.some((column) => column.name === "isPinned")) {
+        await db.exec("ALTER TABLE conversations ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0");
+      }
+      if (!columns.some((column) => column.name === "isStarred")) {
+        await db.exec("ALTER TABLE conversations ADD COLUMN isStarred INTEGER NOT NULL DEFAULT 0");
+      }
+      if (!columns.some((column) => column.name === "snoozedUntil")) {
+        await db.exec("ALTER TABLE conversations ADD COLUMN snoozedUntil DATETIME");
+      }
+
+      await db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_conversations_tenant_inbox
+          ON conversations(tenantId, status, isPinned DESC, isStarred DESC, snoozedUntil, lastMessageAt DESC);
+
+        CREATE TABLE IF NOT EXISTS conversation_tags (
+          conversationId TEXT NOT NULL,
+          tenantId TEXT NOT NULL,
+          tag TEXT NOT NULL,
+          createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (conversationId, tag),
+          FOREIGN KEY (conversationId) REFERENCES conversations(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_conversation_tags_tenant_tag
+          ON conversation_tags(tenantId, tag);
+
+        CREATE TABLE IF NOT EXISTS conversation_notes (
+          id TEXT PRIMARY KEY,
+          conversationId TEXT NOT NULL,
+          tenantId TEXT NOT NULL,
+          authorId TEXT NOT NULL,
+          content TEXT NOT NULL,
+          createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (conversationId) REFERENCES conversations(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_conversation_notes_tenant_conversation
+          ON conversation_notes(tenantId, conversationId, createdAt DESC);
+      `);
+    },
+  },
 ];
 
 export async function runMigrations(db) {
