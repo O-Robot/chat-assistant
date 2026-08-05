@@ -311,11 +311,11 @@ Make the existing admin inbox faster for daily support work without changing the
 
 ### Productivity and UX Improvements
 
-- Added tenant-scoped pin, star, one-day snooze, archive, and reopen controls to the existing conversation workspace.
-- Added multi-select bulk pin, star, and archive actions in the inbox list.
+- Added tenant-scoped pin, star, and one-day snooze controls to the existing conversation workspace.
+- Added multi-select bulk pin and star actions in the inbox list.
 - Added a command palette (Cmd/Ctrl + K), reply shortcut (`R`), copy-conversation-link action, and per-message copy action.
 - Added FTS-backed message search results with matching snippets alongside visitor search.
-- Added archived status treatment and pinned/starred indicators in the conversation list.
+- Added pinned/starred indicators in the conversation list.
 
 ### Customer Context Improvements
 

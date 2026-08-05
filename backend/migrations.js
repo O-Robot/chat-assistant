@@ -148,6 +148,14 @@ const migrations = [
       `);
     },
   },
+  {
+    id: "003_remove_archive_status",
+    async up(db) {
+      // Archive was not retained as an inbox workflow. Restore any chats that
+      // may have been archived while P007 was being introduced.
+      await db.run("UPDATE conversations SET status = 'open' WHERE status = 'archived'");
+    },
+  },
 ];
 
 export async function runMigrations(db) {

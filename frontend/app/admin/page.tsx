@@ -29,7 +29,6 @@ import {
   ArrowUp,
   CheckSquare,
   ChevronDown,
-  Clock3,
   Copy,
   Download,
   EllipsisVertical,
@@ -118,9 +117,9 @@ export default function AdminPage() {
   const [minimized, setMinimized] = useState<Record<string, boolean>>({});
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<"all" | "unread" | "open">(
-    "all",
-  );
+  const [activeFilter, setActiveFilter] = useState<
+    "all" | "unread" | "open" | "starred"
+  >("all");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [selectedConversationIds, setSelectedConversationIds] = useState<
     string[]
@@ -536,11 +535,23 @@ export default function AdminPage() {
     update: Record<string, unknown>,
   ) => {
     try {
-      const response = await adminApi.patch(
-        `/admin/chats/${conversationId}/inbox`,
-        update,
-      );
-      const updated = response.data;
+      const bulkAction =
+        "isPinned" in update
+          ? update.isPinned
+            ? "pin"
+            : "unpin"
+          : "isStarred" in update
+            ? update.isStarred
+              ? "star"
+              : "unstar"
+            : null;
+      const response = bulkAction
+        ? await adminApi.post("/admin/chats/bulk", {
+            conversationIds: [conversationId],
+            action: bulkAction,
+          })
+        : await adminApi.patch(`/admin/chats/${conversationId}/inbox`, update);
+      const updated = bulkAction ? update : response.data;
       setConversations((previous) =>
         previous.map((conversation) =>
           conversation.id === conversationId
@@ -566,7 +577,7 @@ export default function AdminPage() {
   };
 
   const applyBulkAction = async (
-    action: "pin" | "unpin" | "star" | "unstar" | "archive" | "reopen",
+    action: "pin" | "unpin" | "star" | "unstar",
   ) => {
     if (!selectedConversationIds.length) return;
     try {
@@ -585,12 +596,7 @@ export default function AdminPage() {
                     ? { isPinned: 0 }
                     : action === "star"
                       ? { isStarred: 1 }
-                      : action === "unstar"
-                        ? { isStarred: 0 }
-                        : {
-                            latestConversationStatus:
-                              action === "archive" ? "archived" : "open",
-                          }),
+                      : { isStarred: 0 }),
               }
             : visitor,
         ),
@@ -1014,13 +1020,22 @@ export default function AdminPage() {
   };
   const visibleUsers = useMemo(
     () =>
-      filteredUsers.filter((candidate) => {
-        if (activeFilter === "unread") {
-          return (conversationUnreadCounts[candidate.id] || 0) > 0;
-        }
-        if (activeFilter === "open") return onlineUsers.has(candidate.id);
-        return true;
-      }),
+      filteredUsers
+        .filter((candidate) => {
+          if (activeFilter === "unread") {
+            return (conversationUnreadCounts[candidate.id] || 0) > 0;
+          }
+          if (activeFilter === "open") return onlineUsers.has(candidate.id);
+          if (activeFilter === "starred") return (candidate as any).isStarred === 1;
+          return true;
+        })
+        .sort((first: any, second: any) => {
+          const pinnedDifference = Number(second.isPinned || 0) - Number(first.isPinned || 0);
+          if (pinnedDifference) return pinnedDifference;
+          const starredDifference = Number(second.isStarred || 0) - Number(first.isStarred || 0);
+          if (starredDifference) return starredDifference;
+          return new Date(second.lastMessageAt || second.createdAt).getTime() - new Date(first.lastMessageAt || first.createdAt).getTime();
+        }),
     [activeFilter, conversationUnreadCounts, filteredUsers, onlineUsers],
   );
 
@@ -1122,12 +1137,13 @@ export default function AdminPage() {
             {[
               ["all", "All"],
               ["unread", "Unread"],
+              ["starred", "Starred"],
               ["open", "Online"],
             ].map(([value, label]) => (
               <button
                 key={value}
                 onClick={() =>
-                  setActiveFilter(value as "all" | "unread" | "open")
+                  setActiveFilter(value as "all" | "unread" | "open" | "starred")
                 }
                 className={`rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${activeFilter === value ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"}`}
               >
@@ -1163,13 +1179,6 @@ export default function AdminPage() {
               </button>
               <button
                 type="button"
-                onClick={() => applyBulkAction("archive")}
-                title="Archive selected"
-              >
-                <Archive size={14} />
-              </button>
-              <button
-                type="button"
                 onClick={() => setSelectedConversationIds([])}
                 className="ml-auto px-1.5"
               >
@@ -1202,81 +1211,83 @@ export default function AdminPage() {
             aria-label="Conversations"
           >
             {visibleUsers.map((u) => (
-              <button
+              <div
                 key={u.id}
-                onClick={() => {
-                  handleSelectUser(u.id);
-                }}
-                className={`mb-1 flex w-full items-center gap-3 rounded-xl p-3 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 cursor-pointer ${
+                className={`group relative mb-1 flex w-full items-center rounded-xl p-3 text-left transition-all focus-within:outline-none focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 dark:focus-within:ring-offset-slate-900 ${
                   selectedUserId === u.id
                     ? "bg-primary/10 shadow-sm"
                     : "hover:bg-slate-100 dark:hover:bg-slate-800"
                 }`}
               >
-                <div className="relative shrink-0">
-                  <img
-                    src={`https://api.dicebear.com/9.x/notionists-neutral/svg?seed=${u.id}`}
-                    alt=""
-                    className="h-11 w-11 rounded-full bg-slate-100"
-                  />
-                  {onlineUsers.has(u.id) && (
-                    <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-500 dark:border-slate-900" />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between">
-                    <p className="flex min-w-0 items-center gap-1 truncate text-sm font-semibold">
-                      {getDisplayName(u)}
-                      {(u as any).isPinned === 1 && (
-                        <Pin
-                          size={12}
-                          className="shrink-0 text-primary"
-                          aria-label="Pinned"
-                        />
-                      )}
-                      {(u as any).isStarred === 1 && (
-                        <Star
-                          size={12}
-                          className="shrink-0 fill-amber-400 text-amber-400"
-                          aria-label="Starred"
-                        />
-                      )}
-                    </p>
-                    {conversationUnreadCounts[u.id] > 0 && (
-                      <span className="ml-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-white">
-                        {conversationUnreadCounts[u.id]}
-                      </span>
+                <button
+                  type="button"
+                  onClick={() => handleSelectUser(u.id)}
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                >
+                  <div className="relative shrink-0">
+                    <img
+                      src={`https://api.dicebear.com/9.x/notionists-neutral/svg?seed=${u.id}`}
+                      alt=""
+                      className="h-11 w-11 rounded-full bg-slate-100"
+                    />
+                    {onlineUsers.has(u.id) && (
+                      <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-500 dark:border-slate-900" />
                     )}
                   </div>
-                  <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
-                    {conversationUnreadCounts[u.id]
-                      ? "New visitor message"
-                      : u.email}
-                  </p>
-                </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between">
+                      <p className="flex min-w-0 items-center gap-1 truncate text-sm font-semibold">
+                        {getDisplayName(u)}
+                        {(u as any).isPinned === 1 && (
+                          <Pin
+                            size={12}
+                            className="shrink-0 text-primary"
+                            aria-label="Pinned"
+                          />
+                        )}
+                        {(u as any).isStarred === 1 && (
+                          <Star
+                            size={12}
+                            className="shrink-0 fill-amber-400 text-amber-400"
+                            aria-label="Starred"
+                          />
+                        )}
+                      </p>
+                      {conversationUnreadCounts[u.id] > 0 && (
+                        <span className="ml-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-white">
+                          {conversationUnreadCounts[u.id]}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
+                      {conversationUnreadCounts[u.id]
+                        ? "New visitor message"
+                        : u.email}
+                    </p>
+                  </div>
+                </button>
                 {(u as any).latestConversationId && (
-                  <span
-                    role="checkbox"
-                    aria-checked={selectedConversationIds.includes(
+                  <button
+                    type="button"
+                    aria-pressed={selectedConversationIds.includes(
                       (u as any).latestConversationId,
                     )}
-                    onClick={(event) => {
-                      event.stopPropagation();
+                    onClick={() =>
                       setSelectedConversationIds((previous) =>
                         previous.includes((u as any).latestConversationId)
                           ? previous.filter(
                               (id) => id !== (u as any).latestConversationId,
                             )
                           : [...previous, (u as any).latestConversationId],
-                      );
-                    }}
-                    className={`grid h-5 w-5 shrink-0 place-items-center rounded border ${selectedConversationIds.includes((u as any).latestConversationId) ? "border-primary bg-primary text-white" : "border-slate-300 text-transparent"}`}
+                      )
+                    }
+                    className={`absolute left-3 top-3 grid h-11 w-11 place-items-center rounded-full bg-slate-950/55 text-white transition-opacity focus-visible:opacity-100 ${selectedConversationIds.includes((u as any).latestConversationId) ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                     aria-label={`Select ${getDisplayName(u)}`}
                   >
-                    <CheckSquare size={13} />
-                  </span>
+                    <CheckSquare size={18} />
+                  </button>
                 )}
-              </button>
+              </div>
             ))}
           </div>
         ) : (
@@ -1326,11 +1337,6 @@ export default function AdminPage() {
                       className={`h-1.5 w-1.5 rounded-full ${isUserOnline ? "bg-emerald-500" : "bg-slate-400"}`}
                     />
                     {isUserOnline ? "Online now" : "Away"}
-                    {activeConversation?.status === "archived" && (
-                      <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                        Archived
-                      </span>
-                    )}
                   </p>
                 </div>
               </div>
@@ -1393,21 +1399,7 @@ export default function AdminPage() {
                         }
                       />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateInboxState(activeConversation.id, {
-                          snoozedUntil: new Date(
-                            Date.now() + 24 * 60 * 60 * 1000,
-                          ).toISOString(),
-                        })
-                      }
-                      className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
-                      aria-label="Snooze for one day"
-                      title="Snooze for one day"
-                    >
-                      <Clock3 size={18} />
-                    </button>
+
                     <button
                       type="button"
                       onClick={() =>
@@ -1475,31 +1467,6 @@ export default function AdminPage() {
                           </button>
                         )}
                       </MenuItem>
-
-                      {activeConversation &&
-                        activeConversation.status !== "closed" && (
-                          <MenuItem>
-                            {({ active }: any) => (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  updateInboxState(activeConversation.id, {
-                                    status:
-                                      activeConversation.status === "archived"
-                                        ? "open"
-                                        : "archived",
-                                  })
-                                }
-                                className={`${active ? "bg-slate-100 dark:bg-slate-800" : ""} flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm cursor-pointer`}
-                              >
-                                <Archive size={16} />{" "}
-                                {activeConversation.status === "archived"
-                                  ? "Reopen conversation"
-                                  : "Archive conversation"}
-                              </button>
-                            )}
-                          </MenuItem>
-                        )}
 
                       {conversations[conversations.length - 1]?.status !==
                         "closed" && (
@@ -2199,22 +2166,6 @@ export default function AdminPage() {
                         `${window.location.origin}/admin?conversation=${activeConversation.id}`,
                         "Conversation link copied",
                       );
-                    setCommandOpen(false);
-                  },
-                ],
-                [
-                  activeConversation?.status === "archived"
-                    ? "Reopen conversation"
-                    : "Archive conversation",
-                  "",
-                  () => {
-                    if (activeConversation)
-                      updateInboxState(activeConversation.id, {
-                        status:
-                          activeConversation.status === "archived"
-                            ? "open"
-                            : "archived",
-                      });
                     setCommandOpen(false);
                   },
                 ],

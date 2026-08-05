@@ -26,6 +26,8 @@ router.get("/users", async (req, res) => {
           ORDER BY COALESCE(c.lastMessageAt, c.createdAt) DESC, c.id DESC LIMIT 1), 0) AS isStarred,
          (SELECT c.snoozedUntil FROM conversations c WHERE c.userId = u.id AND c.tenantId = u.tenantId
           ORDER BY COALESCE(c.lastMessageAt, c.createdAt) DESC, c.id DESC LIMIT 1) AS snoozedUntil
+         ,(SELECT c.lastMessageAt FROM conversations c WHERE c.userId = u.id AND c.tenantId = u.tenantId
+          ORDER BY COALESCE(c.lastMessageAt, c.createdAt) DESC, c.id DESC LIMIT 1) AS lastMessageAt
        FROM users u WHERE u.tenantId = ?
        ORDER BY isPinned DESC, isStarred DESC, u.createdAt DESC`,
       [req.admin.tenantId],
@@ -174,8 +176,7 @@ router.patch("/chats/:id/inbox", async (req, res) => {
   try {
     const { id } = req.params;
     const { isPinned, isStarred, snoozedUntil, status } = req.body || {};
-    const allowedStatuses = new Set(["open", "archived"]);
-    if (status !== undefined && !allowedStatuses.has(status)) {
+    if (status !== undefined && status !== "open") {
       return res.status(400).json({ error: "Invalid inbox status" });
     }
     if (snoozedUntil !== undefined && snoozedUntil !== null && Number.isNaN(Date.parse(snoozedUntil))) {
@@ -228,7 +229,7 @@ router.post("/chats/bulk", async (req, res) => {
     }
     const updates = {
       pin: "isPinned = 1", unpin: "isPinned = 0", star: "isStarred = 1", unstar: "isStarred = 0",
-      archive: "status = 'archived'", reopen: "status = 'open'",
+      reopen: "status = 'open'",
     };
     if (!updates[action]) return res.status(400).json({ error: "Invalid bulk action" });
     const db = await openDB();
