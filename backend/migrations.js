@@ -194,6 +194,18 @@ const migrations = [
       await db.run("UPDATE conversations SET aiState = 'paused' WHERE status = 'transferred'");
     },
   },
+  {
+    id: "006_telegram_visitor_channel",
+    async up(db) {
+      const userColumns = await db.all("PRAGMA table_info(users)");
+      if (!userColumns.some((column) => column.name === "telegramUserId")) await db.exec("ALTER TABLE users ADD COLUMN telegramUserId TEXT");
+      if (!userColumns.some((column) => column.name === "telegramUsername")) await db.exec("ALTER TABLE users ADD COLUMN telegramUsername TEXT");
+      const conversationColumns = await db.all("PRAGMA table_info(conversations)");
+      if (!conversationColumns.some((column) => column.name === "channel")) await db.exec("ALTER TABLE conversations ADD COLUMN channel TEXT NOT NULL DEFAULT 'widget'");
+      await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_tenant_telegram_user ON users(tenantId, telegramUserId) WHERE telegramUserId IS NOT NULL");
+      await db.exec("CREATE INDEX IF NOT EXISTS idx_conversations_tenant_channel_activity ON conversations(tenantId, channel, lastMessageAt DESC)");
+    },
+  },
 ];
 
 export async function runMigrations(db) {

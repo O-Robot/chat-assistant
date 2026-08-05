@@ -10,7 +10,7 @@ import { sanitizeHTML } from "../utils/sanitize.js";
 import { getMessagesPage } from "../services/conversationService.js";
 import { recordAuditEvent } from "../utils/audit.js";
 import { logger } from "../utils/logger.js";
-import { notifyTelegram } from "../services/telegramService.js";
+import { sendTelegramConversationMessage } from "../services/telegramService.js";
 
 const onlineUsers = new Map();
 const userSockets = new Map();
@@ -290,6 +290,7 @@ export function handleSocketConnection(io, socket) {
         "receive_message",
         messageWithSender,
       );
+      if (senderId === "admin") await sendTelegramConversationMessage(conversationId, sanitizedContent);
       respond(acknowledge, { ok: true, message: messageWithSender });
       if (adminTookOver) return;
 

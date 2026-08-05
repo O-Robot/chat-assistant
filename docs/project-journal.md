@@ -15,6 +15,7 @@ This document is a chronological development log for completed project phases.
 | P006.1 | 2026-07-31 | ✅ Completed | `fix(admin): stabilise handover and conversation controls` |
 | P007 | 2026-08-04 | ✅ Completed | `feat(admin): add inbox productivity and conversation intelligence` |
 | P008 | 2026-08-05 | ✅ Completed | `feat(ai): add remote assistant controls and Telegram adapter` |
+| P008.5 | 2026-08-05 | ✅ Completed | `feat(telegram): add visitor conversation channel` |
 
 <details>
 <summary><strong>P001 — Security Hardening Foundation</strong></summary>
@@ -37,6 +38,39 @@ Eliminate release-blocking authentication, authorisation, tenant-isolation, and 
 
 ```text
 feat(security): harden tenant-scoped sessions and Socket.IO authorisation
+```
+
+</details>
+
+<details>
+<summary><strong>P008.5 — Telegram Visitor Channel</strong></summary>
+
+### Objective
+
+Replace Telegram admin tooling with a secure Telegram visitor channel that feeds the existing conversation and AI pipeline.
+
+### Work Completed
+
+- Removed Telegram polling, admin commands, selected-conversation state, inline admin controls, and remote-admin message routing.
+- Added Telegram visitor identity and conversation channel metadata through migration `006_telegram_visitor_channel`.
+- Added a secret-validated Telegram webhook at `/integrations/telegram/webhook`.
+- Telegram visitors now create or resume normal visitor conversations; their messages persist, appear in the admin inbox, and enter the existing AI pipeline.
+- AI/system and web-admin replies are delivered back to Telegram for Telegram-channel conversations.
+
+### Security
+
+- Webhook processing requires `TELEGRAM_WEBHOOK_SECRET` via Telegram's secret-token header.
+- Bot tokens remain backend-only. Invalid webhook attempts are logged and rejected.
+
+### Verification
+
+- Ran syntax checks for all changed backend modules and whitespace validation successfully.
+- Live verification requires configuring Telegram's webhook URL and secret with the Bot API.
+
+### Suggested Conventional Commit
+
+```text
+feat(telegram): add visitor conversation channel
 ```
 
 </details>

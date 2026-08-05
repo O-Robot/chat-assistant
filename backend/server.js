@@ -13,10 +13,15 @@ import { handleSocketConnection } from "./controllers/socketController.js";
 import { assertAuthConfiguration, getSocketPrincipal, verifyToken } from "./middleware/auth.js";
 import { logger } from "./utils/logger.js";
 import { randomUUID } from "crypto";
-import { startTelegramBot } from "./services/telegramService.js";
+import { createTelegramRouter } from "./routes/telegram.js";
 
 const app = express();
 const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: [process.env.FRONTEND_URL, "http://localhost:3000"].filter(Boolean), methods: ["GET", "POST"], credentials: true },
+  path: "/socket.io/",
+  transports: ["polling", "websocket"],
+});
 
 assertAuthConfiguration();
 
@@ -64,6 +69,11 @@ app.use("/api/users", userRoutes);
 app.use("/api/conversations", conversationRoutes);
 app.use("/auth/admin", adminAuthRoutes);
 app.use("/admin", adminRoutes);
+app.use("/integrations/telegram", createTelegramRouter(io));
+logger.info("telegram_webhook_route_registered", {
+  path: "/integrations/telegram/webhook",
+  secretConfigured: Boolean(process.env.TELEGRAM_WEBHOOK_SECRET),
+});
 
 app.use((req, res) => {
   res.status(404).json({
@@ -88,18 +98,6 @@ app.use((error, req, res, next) => {
     },
   });
 });
-
-const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ["GET", "POST"],
-    credentials: true,
-  },
-  path: "/socket.io/",
-  transports: ["polling", "websocket"],
-});
-
-startTelegramBot(io);
 
 io.use((socket, next) => {
   try {
