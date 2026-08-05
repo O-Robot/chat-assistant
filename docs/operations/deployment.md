@@ -11,7 +11,7 @@ GitHub Actions builds the frontend, copies frontend/backend archives to the serv
 Before deployment:
 
 - Set and validate backend environment values, especially a 32+ character `JWT_SECRET`, admin credentials, tenant ID, database path, CORS origin, email, and AI keys.
-- Run frontend type checks, lint, and production build. TODO: resolve the existing frontend lint errors before treating lint as a release gate.
+- Run frontend type checks, lint, and production build. Lint currently completes without errors; resolve its remaining warnings in a focused maintenance pass.
 - Back up the SQLite database before applying a release, then run `npm run migrate --workspace=robot-chat-backend`. Startup also applies outstanding migrations, but the explicit command makes failures visible before traffic is switched.
 - Confirm `/health` returns `200` and `/ready` returns database status `ok` after deployment.
 

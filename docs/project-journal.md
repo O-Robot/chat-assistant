@@ -22,6 +22,7 @@ This document is a chronological development log for completed project phases.
 | P008.8 | 2026-08-05 | ✅ Completed | `chore(telegram): remove paused integration` |
 | P009 | 2026-08-05 | ✅ Completed | `chore: harden production reliability and security` |
 | P010 | 2026-08-05 | ✅ Completed | `feat(admin): add pwa experience and session security hardening` |
+| P011 | 2026-08-05 | ✅ Completed | `chore: complete final audit and launch verification` |
 
 <details>
 <summary><strong>P001 — Security Hardening Foundation</strong></summary>
@@ -652,6 +653,60 @@ chore: harden production reliability and security
 
 ```text
 feat(admin): add pwa experience and session security hardening
+```
+
+</details>
+
+<details>
+<summary><strong>P011 — Final Testing, Security Audit and Launch Verification</strong></summary>
+
+### Objective
+
+Complete the production release gate: correct launch-blocking regressions, validate the build and migration paths, review security controls, and record residual operational risk.
+
+### Bugs and Security Fixes
+
+- Corrected the admin authentication page's missing Suspense boundary for `useSearchParams`, which prevented `/admin/auth` from being prerendered and caused production builds to fail.
+- Moved the global theme colour to Next.js' supported viewport export.
+- Restricted production CORS and Socket.IO origins to the configured `FRONTEND_URL`; localhost remains available only outside production. Production startup now fails clearly when that origin is absent.
+- Removed a debug log from the public embed script.
+- Added `npm run check` for targeted backend syntax validation.
+- Removed unused runtime dependencies (`frontend` SQLite and backend `uuidv4`) and moved the development-only `concurrently` runner to `devDependencies`.
+- Upgraded the backend SQLite driver to `6.0.1` and Next.js/eslint-config-next to `16.3.0`; rebuilt the native SQLite binding and verified migrations after the upgrade.
+- Ignored SQLite WAL and shared-memory sidecar files so local verification artefacts cannot be staged accidentally.
+
+### Verification
+
+- `backend`: `npm run check` passed.
+- `backend`: `npm run migrate` passed; migrations are up to date.
+- `frontend`: `npx tsc --noEmit` passed.
+- `frontend`: `npm run lint` completed with 20 warnings and no errors.
+- `frontend`: `npm run build` passed; all nine routes, including `/admin/auth` and the web manifest, were generated successfully.
+- `npm audit --omit=dev` reduced from 39 production findings (5 critical) to one low-severity Quill advisory.
+- `git diff --check` passed.
+
+### Audit Outcome
+
+- Authentication, tenant-scoped API/socket authorisation, session expiry, no-store admin/API responses, and network-only PWA handling are present in the reviewed code.
+- The database lifecycle is managed at startup; migration execution is explicit/startup-only and does not run in normal request handlers.
+- Backend backup and recovery instructions are documented, but a production restore rehearsal has not been evidenced in this repository.
+- No automated end-to-end suite exists. Live visitor, Socket.IO, AI-provider, session-expiry, PWA-install, and backup-restore checks remain required in a configured staging/production-like environment before public launch.
+
+### Remaining Limitations
+
+- `npm audit` reports one low-severity advisory in Quill `2.0.3`. Rich HTML is sanitised server-side and with DOMPurify before rendering; upgrade or replace the editor when a compatible upstream fix is available.
+- Lint has 20 warnings, primarily React hook dependency warnings in the visitor/admin realtime surfaces. They do not fail the build, but can conceal stale-closure regressions and should be resolved in a focused maintenance pass.
+- Rate limits, presence, and Socket.IO coordination are process-local; retain a single backend instance until a shared adapter/store is introduced.
+- PWA offline behaviour intentionally does not cache conversations or credentials; it is installable, but not an offline inbox.
+
+### Launch Recommendation
+
+**Conditionally ready for launch** after a staging smoke test covering the visitor-to-AI path, admin takeover/resume, 3-day-session expiry/logout, installed-PWA offline/reconnect behaviour, and a verified SQLite backup restore. Do not horizontally scale the backend before replacing process-local realtime and rate-limit state.
+
+### Suggested Conventional Commit
+
+```text
+chore: complete final audit and launch verification
 ```
 
 </details>
