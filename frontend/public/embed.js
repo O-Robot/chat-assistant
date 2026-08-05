@@ -17,7 +17,6 @@
     `;
 
     const widgetUrl = scriptTag?.dataset.widgetUrl || "http://localhost:3000";
-    console.log(widgetUrl);
     const iframe = document.createElement("iframe");
     iframe.src = `${widgetUrl}/widget`;
     iframe.style.cssText = `
@@ -58,8 +57,8 @@
           container.style.width = "min(420px, calc(100vw - 24px))";
           container.style.height = "min(630px, calc(100dvh - 24px))";
         } else {
-          container.style.width = "min(200px, calc(100vw - 24px))";
-          container.style.height = "150px";
+          container.style.width = "min(400px, calc(100vw - 24px))";
+          container.style.height = "250px";
         }
       }
     });

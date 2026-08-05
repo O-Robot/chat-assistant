@@ -1619,7 +1619,7 @@ export default function AdminPage() {
                   </h2>
                   <p className="flex flex-col md:flex-row md:items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
                     <span className="flex gap-1 items-center">
-                      <div
+                      <span
                         className={`h-1.5 w-1.5 rounded-full ${isUserOnline ? "bg-emerald-500" : "bg-slate-400"}`}
                       />
                       {isUserOnline ? "Online now" : "Away"}{" "}

@@ -13,9 +13,17 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
 export default function AdminAuthPage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen bg-slate-50 dark:bg-slate-950" />}>
+      <AdminAuthForm />
+    </Suspense>
+  );
+}
+
+function AdminAuthForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();

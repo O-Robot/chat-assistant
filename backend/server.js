@@ -17,11 +17,16 @@ import { closeDatabase, initializeDatabase } from "./db.js";
 import { createRateLimiter } from "./middleware/rateLimit.js";
 import { isAdminSessionActive } from "./middleware/adminAuth.js";
 
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  ...(process.env.NODE_ENV === "production" ? [] : ["http://localhost:3000"]),
+].filter(Boolean);
+
 const app = express();
 const server = http.createServer(app);
 const socketConnectionWindows = new Map();
 const io = new Server(server, {
-  cors: { origin: [process.env.FRONTEND_URL, "http://localhost:3000"].filter(Boolean), methods: ["GET", "POST"], credentials: true },
+  cors: { origin: allowedOrigins, methods: ["GET", "POST"], credentials: true },
   path: "/socket.io/",
   transports: ["polling", "websocket"],
 });
@@ -32,6 +37,7 @@ function assertOperationalConfiguration() {
   const missing = [];
   if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY) missing.push("GEMINI_API_KEY or GROQ_API_KEY");
   if (!process.env.RESEND_API_KEY) missing.push("RESEND_API_KEY");
+  if (process.env.NODE_ENV === "production" && !process.env.FRONTEND_URL) missing.push("FRONTEND_URL");
   if (!missing.length) return;
   if (process.env.NODE_ENV === "production") throw new Error(`Missing required production configuration: ${missing.join(", ")}`);
   logger.warn("configuration_incomplete", { missing });
@@ -80,12 +86,6 @@ app.use((req, res, next) => {
   });
   next();
 });
-
-// allowed origni
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  "http://localhost:3000",
-].filter(Boolean);
 
 // Express CORS middleware
 const corsOptions = {
