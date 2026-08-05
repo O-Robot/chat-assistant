@@ -1,5 +1,5 @@
-import { openDB } from "./db.js";
+import { closeDatabase, initializeDatabase } from "./db.js";
 
-const db = await openDB();
-await db.close();
+await initializeDatabase({ migrate: true });
+await closeDatabase();
 console.log("Database migrations are up to date.");

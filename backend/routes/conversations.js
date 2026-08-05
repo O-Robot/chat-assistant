@@ -5,6 +5,7 @@ import { exportUserTranscript } from "../utils/email/email.js";
 import { authenticateVisitor } from "../middleware/auth.js";
 import { getMessagesPage } from "../services/conversationService.js";
 import { recordAuditEvent } from "../utils/audit.js";
+import { logger } from "../utils/logger.js";
 
 const router = express.Router();
 
@@ -83,6 +84,7 @@ router.post("/new", authenticateVisitor, async (req, res) => {
       resourceType: "conversation",
       resourceId: conversationId,
     });
+    logger.info("conversation_created", { tenantId, conversationId, userId });
 
     res.json({ conversationId });
   } catch (error) {
@@ -157,6 +159,7 @@ router.post("/:id/close", authenticateVisitor, async (req, res) => {
       resourceType: "conversation",
       resourceId: req.params.id,
     });
+    logger.info("conversation_closed", { tenantId: req.principal.tenantId, conversationId: req.params.id, userId: req.principal.id });
 
     res.json({ success: true, message: "Conversation closed" });
   } catch (error) {

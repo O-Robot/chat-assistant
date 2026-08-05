@@ -16,7 +16,18 @@ const userSockets = new Map();
 const conversationAdminStatus = new Map();
 const pendingTransferRequests = new Map();
 const typingTimeouts = new Map();
+const messageRateWindows = new Map();
 const TYPING_TIMEOUT_MS = 5000;
+
+function isMessageRateLimited(principal) {
+  const key = `${principal.tenantId}:${principal.id}`;
+  const now = Date.now();
+  const previous = messageRateWindows.get(key) || [];
+  const active = previous.filter((timestamp) => now - timestamp < 60_000);
+  active.push(now);
+  messageRateWindows.set(key, active);
+  return active.length > 30;
+}
 
 function presenceKey(principal) {
   return `${principal.tenantId}:${principal.id}`;
@@ -167,6 +178,12 @@ export function handleSocketConnection(io, socket) {
         return;
       }
 
+      if (content.length > 4000 || isMessageRateLimited(principal)) {
+        logger.warn("message_failed", { tenantId: principal.tenantId, conversationId, reason: content.length > 4000 ? "message_too_long" : "rate_limited" });
+        respond(acknowledge, { ok: false, error: content.length > 4000 ? "Messages must be 4,000 characters or fewer" : "Too many messages. Please slow down." });
+        return;
+      }
+
       const sanitizedContent = sanitizeHTML(content);
 
       if (!sanitizedContent) {
@@ -240,6 +257,7 @@ export function handleSocketConnection(io, socket) {
       }
 
       logger.info("message_persisted", { tenantId: principal.tenantId, conversationId, messageId: id, senderId });
+      logger.info("message_sent", { tenantId: principal.tenantId, conversationId, messageId: id, senderRole: principal.role });
       await recordAuditEvent(db, {
         tenantId: principal.tenantId,
         actorId: principal.id,

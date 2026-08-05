@@ -3,11 +3,41 @@ import { sendAIMessage, sendSystemMessage } from "../utils/systemMessages.js";
 import { GoogleGenAI } from "@google/genai";
 import Groq from "groq-sdk";
 import { setPendingTransfer } from "./socketController.js";
+import { logger } from "../utils/logger.js";
 
 const aiRespondingState = new Map();
+const aiRequestWindows = new Map();
+const AI_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS || 25_000);
 
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+function withTimeout(promise, timeoutMs) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("AI request timed out")), timeoutMs)),
+  ]);
+}
+
+function isAiRateLimited(senderId) {
+  const now = Date.now();
+  const active = (aiRequestWindows.get(senderId) || []).filter((timestamp) => now - timestamp < 60_000);
+  active.push(now);
+  aiRequestWindows.set(senderId, active);
+  return active.length > 8;
+}
+
+let genAI;
+let groq;
+
+function getGoogleClient() {
+  if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
+  genAI ||= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  return genAI;
+}
+
+function getGroqClient() {
+  if (!process.env.GROQ_API_KEY) throw new Error("GROQ_API_KEY is not configured");
+  groq ||= new Groq({ apiKey: process.env.GROQ_API_KEY });
+  return groq;
+}
 
 const MODEL_POOL = [
   {
@@ -243,7 +273,7 @@ async function generateWithGoogle(
     })),
   ];
 
-  const response = await genAI.models.generateContent({
+  const response = await getGoogleClient().models.generateContent({
     model: modelName,
     contents: contents,
   });
@@ -268,7 +298,7 @@ async function generateWithGroq(modelName, conversationHistory, systemPrompt) {
     })),
   ];
 
-  const completion = await groq.chat.completions.create({
+  const completion = await getGroqClient().chat.completions.create({
     model: modelName,
     messages,
     temperature: 0.7,
@@ -297,17 +327,17 @@ async function generateWithFallback(conversationHistory, systemPrompt, maxTokens
       let response = "";
 
       if (model.provider === "google") {
-        response = await generateWithGoogle(
+        response = await withTimeout(generateWithGoogle(
           model.name,
           conversationHistory,
           systemPrompt,
-        );
+        ), AI_TIMEOUT_MS);
       } else {
-        response = await generateWithGroq(
+        response = await withTimeout(generateWithGroq(
           model.name,
           conversationHistory,
           systemPrompt,
-        );
+        ), AI_TIMEOUT_MS);
       }
 
       if (response && response.trim()) {
@@ -340,7 +370,14 @@ export async function handleAIResponse(io, message) {
     return;
   }
 
+  if (isAiRateLimited(senderId)) {
+    logger.warn("ai_request_failed", { conversationId, senderId, state: "AI_FAILED", reason: "rate_limited" });
+    await sendAIMessage(io, conversationId, "I’ve received several messages quickly. Please give me a moment, then send your next message.");
+    return;
+  }
+
   aiRespondingState.set(conversationId, true);
+  logger.info("ai_request_started", { conversationId, senderId, state: "AI_PENDING" });
 
   try {
     const db = await openDB();
@@ -417,9 +454,10 @@ export async function handleAIResponse(io, message) {
     // Send message
     if (aiResponse) {
       await sendAIMessage(io, conversationId, aiResponse);
+      logger.info("ai_request_completed", { conversationId, senderId, state: "AI_COMPLETED" });
     }
   } catch (error) {
-    console.error("AI pipeline failed:", error);
+    logger.error("ai_request_failed", { conversationId, senderId, state: "AI_FAILED", errorName: error.name, errorMessage: error.message });
 
     io.to(`conversation-${conversationId}`).emit("user_stopped_typing", {
       id: "system",

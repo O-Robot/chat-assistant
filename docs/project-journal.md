@@ -20,6 +20,7 @@ This document is a chronological development log for completed project phases.
 | P008.6 | 2026-08-05 | ✅ Completed | `feat(telegram): align visitor onboarding with widget flow` |
 | P008.7 | 2026-08-05 | ✅ Completed | `feat(telegram): enforce visitor onboarding and conversation lifecycle` |
 | P008.8 | 2026-08-05 | ✅ Completed | `chore(telegram): remove paused integration` |
+| P009 | 2026-08-05 | ✅ Completed | `chore: harden production reliability and security` |
 
 <details>
 <summary><strong>P001 — Security Hardening Foundation</strong></summary>
@@ -572,6 +573,50 @@ Make AI the default conversation owner and require an explicit admin takeover be
 
 ```text
 feat(admin): improve takeover workflow and ai assisted replies
+```
+
+</details>
+
+<details>
+<summary><strong>P009 — Production Readiness and Reliability Hardening</strong></summary>
+
+### Objective
+
+Prepare the public-facing chat platform for stable, safer production operation without adding product features.
+
+### Implementation Summary
+
+- Replaced per-request SQLite initialisation with a single managed connection created at startup; migrations run at startup or via `backend/migrate.js`, never during normal requests.
+- Added WAL mode, a SQLite busy timeout, graceful database shutdown, and lightweight readiness checks against the managed connection.
+- Standardised HTTP error responses through a request-ID-aware response normaliser and retained internal error details in structured logs only.
+- Added baseline security headers, stricter origin validation, bounded JSON payloads, registration validation, and in-memory rate limits for registration, login, sockets, messages, and AI requests.
+- Added AI request lifecycle logging (`AI_PENDING`, `AI_COMPLETED`, `AI_FAILED`), a provider timeout, and a visitor-friendly failure response.
+- Added structured conversation and message lifecycle events while avoiding credential or token logging.
+- Deferred AI and email provider client initialisation so startup validation can report missing configuration clearly.
+
+### Files Changed
+
+- `backend/db.js`, `backend/migrate.js`, `backend/server.js`
+- `backend/middleware/rateLimit.js`
+- `backend/controllers/aiController.js`, `backend/controllers/socketController.js`
+- `backend/routes/users.js`, `backend/routes/conversations.js`
+- `backend/utils/email/email.js`
+
+### Verification
+
+- Verified the managed SQLite lifecycle with a temporary database: `openDB()` returned the startup-managed connection and applied five migrations only during initialisation.
+- Backend syntax, TypeScript, lint, production build, and whitespace checks are recorded with this phase.
+
+### Remaining Limitations
+
+- Rate limiting is in-memory and per process; use a shared store before horizontally scaling.
+- SQLite remains appropriate for this single-instance deployment but needs a migration plan before multi-instance writes.
+- Live provider and Socket.IO lifecycle checks require configured production credentials and a browser session.
+
+### Suggested Conventional Commit
+
+```text
+chore: harden production reliability and security
 ```
 
 </details>

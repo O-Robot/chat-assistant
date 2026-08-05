@@ -8,6 +8,7 @@ import {
   signVisitorSession,
 } from "../middleware/auth.js";
 import { recordAuditEvent } from "../utils/audit.js";
+import { logger } from "../utils/logger.js";
 
 const router = express.Router();
 
@@ -79,6 +80,16 @@ router.post("/", async (req, res) => {
     ) {
       return res.status(400).json({ message: "All fields are required" });
     }
+    if (
+      firstName.trim().length > 100 ||
+      lastName.trim().length > 100 ||
+      email.trim().length > 254 ||
+      phone.trim().length > 50 ||
+      country.trim().length > 100 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+    ) {
+      return res.status(400).json({ message: "Please provide valid registration details" });
+    }
 
     const db = await openDB();
     const tenantId = getDefaultTenantId();
@@ -130,6 +141,7 @@ router.post("/", async (req, res) => {
       resourceType: "conversation",
       resourceId: conversationId,
     });
+    logger.info("conversation_created", { tenantId, conversationId, userId: user.id });
 
     res.json({
       userId: user.id,

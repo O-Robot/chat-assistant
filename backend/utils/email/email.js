@@ -11,16 +11,18 @@ import fs from "fs/promises";
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+let resend;
 
-if (!resend) {
-  throw new Error("RESEND_API_KEY is not set in environment variables");
+function getResendClient() {
+  if (!process.env.RESEND_API_KEY) throw new Error("RESEND_API_KEY is not configured");
+  resend ||= new Resend(process.env.RESEND_API_KEY);
+  return resend;
 }
 
 export async function sendEmail({ fromName, to, subject, html }) {
   const senderEmail = "no-reply@ogooluwaniadewale.com";
   try {
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await getResendClient().emails.send({
       from: `${fromName} <${senderEmail}>`,
       to,
       subject,
@@ -44,7 +46,7 @@ export async function sendEmailWithAttachment({
   attachmentData,
 }) {
   try {
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await getResendClient().emails.send({
       from: "Portfolio Chat Transcript <robot@ogooluwaniadewale.com>",
       to,
       subject,

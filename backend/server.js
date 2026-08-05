@@ -13,9 +13,12 @@ import { handleSocketConnection } from "./controllers/socketController.js";
 import { assertAuthConfiguration, getSocketPrincipal, verifyToken } from "./middleware/auth.js";
 import { logger } from "./utils/logger.js";
 import { randomUUID } from "crypto";
+import { closeDatabase, initializeDatabase } from "./db.js";
+import { createRateLimiter } from "./middleware/rateLimit.js";
 
 const app = express();
 const server = http.createServer(app);
+const socketConnectionWindows = new Map();
 const io = new Server(server, {
   cors: { origin: [process.env.FRONTEND_URL, "http://localhost:3000"].filter(Boolean), methods: ["GET", "POST"], credentials: true },
   path: "/socket.io/",
@@ -24,12 +27,40 @@ const io = new Server(server, {
 
 assertAuthConfiguration();
 
+function assertOperationalConfiguration() {
+  const missing = [];
+  if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY) missing.push("GEMINI_API_KEY or GROQ_API_KEY");
+  if (!process.env.RESEND_API_KEY) missing.push("RESEND_API_KEY");
+  if (!missing.length) return;
+  if (process.env.NODE_ENV === "production") throw new Error(`Missing required production configuration: ${missing.join(", ")}`);
+  logger.warn("configuration_incomplete", { missing });
+}
+
+assertOperationalConfiguration();
+
 app.use(express.json({ limit: "64kb" }));
 app.use(cookieParser());
 app.use((req, res, next) => {
   const requestId = req.headers["x-request-id"] || randomUUID();
   req.requestId = requestId;
   res.setHeader("X-Request-Id", requestId);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Content-Security-Policy", "default-src 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  const sendJson = res.json.bind(res);
+  res.json = (body) => {
+    if (res.statusCode >= 400 && !(body?.error?.code && body?.error?.message)) {
+      const message = typeof body?.error === "string"
+        ? body.error
+        : typeof body?.message === "string"
+          ? body.message
+          : "An unexpected error occurred";
+      const code = body?.code || (res.statusCode === 400 ? "VALIDATION_ERROR" : res.statusCode === 401 ? "UNAUTHENTICATED" : res.statusCode === 403 ? "FORBIDDEN" : res.statusCode === 404 ? "NOT_FOUND" : res.statusCode === 409 ? "CONFLICT" : "INTERNAL_ERROR");
+      return sendJson({ error: { code, message, requestId } });
+    }
+    return sendJson(body);
+  };
   const startedAt = Date.now();
   res.on("finish", () => {
     logger[res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info"](
@@ -54,7 +85,10 @@ const allowedOrigins = [
 
 // Express CORS middleware
 const corsOptions = {
-  origin: allowedOrigins,
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error("Origin is not allowed by CORS"));
+  },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   credentials: true,
 };
@@ -64,9 +98,9 @@ app.options(/.*/, cors(corsOptions));
 
 // Mount routes
 app.use("/", routes);
-app.use("/api/users", userRoutes);
+app.use("/api/users", createRateLimiter({ windowMs: 60_000, max: 20, event: "visitor_rate_limited" }), userRoutes);
 app.use("/api/conversations", conversationRoutes);
-app.use("/auth/admin", adminAuthRoutes);
+app.use("/auth/admin", createRateLimiter({ windowMs: 15 * 60_000, max: 10, event: "login_rate_limited" }), adminAuthRoutes);
 app.use("/admin", adminRoutes);
 
 app.use((req, res) => {
@@ -95,6 +129,15 @@ app.use((error, req, res, next) => {
 
 io.use((socket, next) => {
   try {
+    const ip = socket.handshake.address || "unknown";
+    const now = Date.now();
+    const connections = (socketConnectionWindows.get(ip) || []).filter((timestamp) => now - timestamp < 60_000);
+    connections.push(now);
+    socketConnectionWindows.set(ip, connections);
+    if (connections.length > 40) {
+      logger.warn("socket_connection_rate_limited", { ip });
+      return next(new Error("Too many connection attempts"));
+    }
     const principal = getSocketPrincipal(socket);
     const adminToken = socket.handshake.headers.cookie
       ?.split(";")
@@ -133,6 +176,19 @@ io.on("connection", (socket) => {
 });
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  logger.info("server_started", { port: PORT });
-});
+initializeDatabase({ migrate: true })
+  .then(() => server.listen(PORT, () => logger.info("server_started", { port: PORT })))
+  .catch((error) => {
+    logger.error("server_start_failed", { errorName: error.name, errorMessage: error.message });
+    process.exit(1);
+  });
+
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.once(signal, () => {
+    server.close(async () => {
+      await closeDatabase();
+      logger.info("server_stopped", { signal });
+      process.exit(0);
+    });
+  });
+}
