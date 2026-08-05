@@ -16,6 +16,9 @@ This document is a chronological development log for completed project phases.
 | P007 | 2026-08-04 | ✅ Completed | `feat(admin): add inbox productivity and conversation intelligence` |
 | P008 | 2026-08-05 | ✅ Completed | `feat(ai): add remote assistant controls and Telegram adapter` |
 | P008.5 | 2026-08-05 | ✅ Completed | `feat(telegram): add visitor conversation channel` |
+| P008.6 | 2026-08-05 | ✅ Completed | `feat(telegram): align visitor onboarding with widget flow` |
+| P008.7 | 2026-08-05 | ✅ Completed | `feat(telegram): enforce visitor onboarding and conversation lifecycle` |
+| P008.8 | 2026-08-05 | ✅ Completed | `chore(telegram): remove paused integration` |
 
 <details>
 <summary><strong>P001 — Security Hardening Foundation</strong></summary>
@@ -432,6 +435,106 @@ P009 — Not started.
 
 ```text
 feat(ai): add remote assistant controls and Telegram adapter
+```
+
+</details>
+
+<details>
+<summary><strong>P008.6 — Align Telegram Visitor Experience With Web Widget Flow</strong></summary>
+
+### Objective
+
+Make Telegram a first-class visitor client that follows the same profile onboarding and conversation activation rules as the web widget.
+
+### Work Completed
+
+- Extracted the widget's visitor profile validation and session creation into a shared backend service.
+- Added a persisted, tenant-scoped Telegram onboarding state for email, phone, and country collection.
+- Telegram visitors now appear as `Unknown Visitor` with their Telegram handle while onboarding is incomplete; the synthetic database email is no longer exposed in the inbox or details drawer.
+- Completing onboarding updates the provisional visitor profile in place, preserves the Telegram channel, and activates the existing AI conversation pipeline.
+- Added the widget's suggested questions as a Telegram reply keyboard after onboarding and in the `/start` welcome context.
+- Removed stale Telegram-admin notification calls that referenced the retired polling integration.
+
+### Verification
+
+- Ran syntax checks for the changed backend modules and a working-tree whitespace check successfully.
+- Ran `npx tsc --noEmit`, `npm run lint` (20 existing warnings; no errors), and `npm run build` successfully in `frontend`.
+- The isolated runtime onboarding check could not load in this environment because an unrelated email module requires a configured Resend API key at import time.
+
+### Remaining Risks
+
+- Telegram contact information is collected as ordinary bot messages. The answers are deliberately excluded from the chat transcript, but Telegram itself retains those messages under its normal platform behaviour.
+- Live verification requires a configured webhook, Telegram bot token, and Resend API key in the local runtime environment.
+
+### Suggested Conventional Commit
+
+```text
+feat(telegram): align visitor onboarding with widget flow
+```
+
+</details>
+
+<details>
+<summary><strong>P008.7 — Telegram Visitor State Machine and Onboarding Enforcement</strong></summary>
+
+### Objective
+
+Enforce the widget-equivalent Telegram visitor lifecycle: complete onboarding before AI access, durable identity resolution, and visitor-side conversation controls.
+
+### Work Completed
+
+- Replaced the partial Telegram onboarding flow with a persisted state machine: email, full name, country selection, then a normalised and validated phone number.
+- Prevented all incomplete visitors from reaching the AI pipeline; onboarding answers are not persisted as conversation messages.
+- Added country quick-reply options and a persistent Telegram menu for continuing chat, sending a transcript, ending a conversation, and ending a session.
+- Added tenant-scoped Telegram session state so closed or ended sessions create a fresh conversation while retaining the visitor profile and Telegram identity.
+- Added transcript delivery for the active conversation, including visitor, AI, admin, and system messages.
+- Added a paused-AI acknowledgement so Telegram visitor messages do not invoke AI during human takeover.
+- Added Telegram channel visibility to the admin conversation details drawer.
+- Hardened identity merging: a provisional Telegram profile is merged into an existing email profile within one transaction, including related conversation/message ownership, rather than creating a duplicate or violating an email constraint.
+- Added migration `008_telegram_visitor_sessions` for the extended onboarding fields and active Telegram session state.
+
+### Verification
+
+- Ran backend syntax checks and `git diff --check` successfully.
+- Ran frontend TypeScript checks successfully.
+- Ran a temporary SQLite database test for new onboarding and duplicate-email registration: it completed one visitor profile and one Telegram conversation without a constraint error.
+- Frontend lint and production build passed during P008.6; no frontend behaviour changed in this phase.
+
+### Remaining Risks
+
+- The country list intentionally starts with Nigeria, United States, and United Kingdom; expand it or use Telegram contact sharing if broader international coverage is needed.
+- Live webhook verification still requires configured Telegram, email, and AI provider credentials.
+
+### Suggested Conventional Commit
+
+```text
+feat(telegram): enforce visitor onboarding and conversation lifecycle
+```
+
+</details>
+
+<details>
+<summary><strong>P008.8 — Temporary Telegram Integration Rollback</strong></summary>
+
+### Objective
+
+Pause the experimental Telegram visitor channel without altering the primary widget, admin inbox, AI, authentication, or core conversation flows.
+
+### Work Completed
+
+- Removed the Telegram webhook route, visitor service, shared onboarding adapter, delivery hooks, and Telegram-specific frontend display fields.
+- Removed Telegram migration definitions for fresh installations.
+- Preserved existing deployed SQLite data: historical Telegram columns and tables are left inert rather than being destructively dropped.
+
+### Verification
+
+- Confirmed no Telegram references remain in runtime backend or frontend source.
+- Ran backend syntax checks and working-tree whitespace validation successfully.
+
+### Suggested Conventional Commit
+
+```text
+chore(telegram): remove paused integration
 ```
 
 </details>

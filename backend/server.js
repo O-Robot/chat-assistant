@@ -13,7 +13,6 @@ import { handleSocketConnection } from "./controllers/socketController.js";
 import { assertAuthConfiguration, getSocketPrincipal, verifyToken } from "./middleware/auth.js";
 import { logger } from "./utils/logger.js";
 import { randomUUID } from "crypto";
-import { createTelegramRouter } from "./routes/telegram.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -69,11 +68,6 @@ app.use("/api/users", userRoutes);
 app.use("/api/conversations", conversationRoutes);
 app.use("/auth/admin", adminAuthRoutes);
 app.use("/admin", adminRoutes);
-app.use("/integrations/telegram", createTelegramRouter(io));
-logger.info("telegram_webhook_route_registered", {
-  path: "/integrations/telegram/webhook",
-  secretConfigured: Boolean(process.env.TELEGRAM_WEBHOOK_SECRET),
-});
 
 app.use((req, res) => {
   res.status(404).json({

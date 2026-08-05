@@ -10,7 +10,6 @@ import { sanitizeHTML } from "../utils/sanitize.js";
 import { getMessagesPage } from "../services/conversationService.js";
 import { recordAuditEvent } from "../utils/audit.js";
 import { logger } from "../utils/logger.js";
-import { sendTelegramConversationMessage } from "../services/telegramService.js";
 
 const onlineUsers = new Map();
 const userSockets = new Map();
@@ -206,7 +205,6 @@ export function handleSocketConnection(io, socket) {
         );
         conversationAdminStatus.set(conversationId, true);
         pendingTransferRequests.delete(conversationId);
-        notifyTelegram(`AI handover: ${conversationId}`).catch(() => {});
         io.to(`conversation-${conversationId}`).emit("conversation_ai_state", { conversationId, aiState: "paused" });
         io.to(`conversation-${conversationId}`).emit("system_offline_for_conversation", conversationId);
         await sendSystemMessage(
@@ -242,10 +240,6 @@ export function handleSocketConnection(io, socket) {
       }
 
       logger.info("message_persisted", { tenantId: principal.tenantId, conversationId, messageId: id, senderId });
-      if (senderId !== "admin") {
-        const count = await db.get("SELECT COUNT(*) AS count FROM messages WHERE conversationId = ?", [conversationId]);
-        if (count.count === 1) notifyTelegram(`New conversation: ${conversationId}`).catch(() => {});
-      }
       await recordAuditEvent(db, {
         tenantId: principal.tenantId,
         actorId: principal.id,
@@ -290,7 +284,6 @@ export function handleSocketConnection(io, socket) {
         "receive_message",
         messageWithSender,
       );
-      if (senderId === "admin") await sendTelegramConversationMessage(conversationId, sanitizedContent);
       respond(acknowledge, { ok: true, message: messageWithSender });
       if (adminTookOver) return;
 

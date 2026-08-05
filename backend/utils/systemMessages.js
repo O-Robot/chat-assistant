@@ -49,9 +49,6 @@ export async function sendSystemMessage(io, conversationId, content, senderId = 
       systemMessage,
     );
 
-    const { sendTelegramConversationMessage } = await import("../services/telegramService.js");
-    await sendTelegramConversationMessage(conversationId, sanitizedContent);
-
     return systemMessage;
   } catch (error) {
     console.error("Error sending system message:", error);
