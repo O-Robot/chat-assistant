@@ -1,7 +1,7 @@
 import express from "express";
 import { loginAdmin, authenticateAdmin } from "../middleware/adminAuth.js";
 import { openDB } from "../db.js";
-import { getDefaultTenantId } from "../middleware/auth.js";
+import { getDefaultTenantId, verifyToken } from "../middleware/auth.js";
 import { recordAuditEvent } from "../utils/audit.js";
 import { logger } from "../utils/logger.js";
 
@@ -24,7 +24,7 @@ router.post("/login", async (req, res) => {
         secure: isProduction,
         sameSite: isProduction ? "none" : "lax",
         path: "/",
-        maxAge: 2 * 24 * 60 * 60 * 1000,
+        maxAge: 3 * 24 * 60 * 60 * 1000,
       });
 
       const db = await openDB();
@@ -51,7 +51,17 @@ router.post("/login", async (req, res) => {
 });
 
 // Logout
-router.post("/logout", (req, res) => {
+router.post("/logout", async (req, res) => {
+  try {
+    const token = req.cookies?.whoami;
+    const session = token ? verifyToken(token) : null;
+    if (session?.sessionId) {
+      const db = await openDB();
+      await db.run("UPDATE admin_sessions SET invalidatedAt = CURRENT_TIMESTAMP WHERE id = ? AND tenantId = ?", [session.sessionId, session.tenantId]);
+    }
+  } catch {
+    // Expired or invalid tokens still receive a clear-cookie response.
+  }
   res.clearCookie("whoami", {
     httpOnly: true,
     secure: isProduction,

@@ -98,6 +98,12 @@ export const initializeSocket = (config?: SocketConfig) => {
         .setError("An error occurred with the chat connection.");
     });
 
+    socket.on("session_expired", () => {
+      if (getSocketRole() !== "admin" || typeof window === "undefined") return;
+      socket.disconnect();
+      window.location.replace("/admin/auth?reason=session-expired");
+    });
+
     socket.on("disconnect", (reason) => {
       Console.warn("❌ Socket disconnected:", reason);
 

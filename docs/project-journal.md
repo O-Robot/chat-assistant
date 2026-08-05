@@ -21,6 +21,7 @@ This document is a chronological development log for completed project phases.
 | P008.7 | 2026-08-05 | ✅ Completed | `feat(telegram): enforce visitor onboarding and conversation lifecycle` |
 | P008.8 | 2026-08-05 | ✅ Completed | `chore(telegram): remove paused integration` |
 | P009 | 2026-08-05 | ✅ Completed | `chore: harden production reliability and security` |
+| P010 | 2026-08-05 | ✅ Completed | `feat(admin): add pwa experience and session security hardening` |
 
 <details>
 <summary><strong>P001 — Security Hardening Foundation</strong></summary>
@@ -617,6 +618,40 @@ Prepare the public-facing chat platform for stable, safer production operation w
 
 ```text
 chore: harden production reliability and security
+```
+
+</details>
+
+<details>
+<summary><strong>P010 — PWA Experience and Admin Security Hardening</strong></summary>
+
+### Implementation Summary
+
+- Added an admin-scoped web manifest, standalone install metadata, theme colours, an icon, and a network-only service worker.
+- Added PWA registration and a visible offline status to the admin workspace; offline sends are blocked and no conversations, tokens, or credentials are cached.
+- Reduced admin JWT and cookie lifetime to three days.
+- Added server-backed single-active admin sessions. A new login invalidates earlier sessions; logout invalidates its session before clearing the HttpOnly cookie.
+- Enforced valid admin sessions on admin APIs and Socket.IO handshakes. Expired connected admin sockets receive `session_expired`, disconnect, and redirect to the login page.
+- Added an expired-session login message and future-notification requirements documentation.
+
+### Files Changed
+
+- `frontend/app/manifest.ts`, `frontend/public/sw.js`
+- `frontend/components/admin/PwaRegistration.tsx`
+- `frontend/app/admin/page.tsx`, `frontend/app/admin/auth/page.tsx`, `frontend/lib/socket.ts`
+- `backend/middleware/adminAuth.js`, `backend/routes/adminAuth.js`, `backend/server.js`, `backend/migrations.js`
+- `docs/development/pwa-notifications.md`
+
+### Known Limitations
+
+- iOS installation remains a Safari user action (Share → Add to Home Screen); browsers do not expose a programmatic install prompt there.
+- The network-only worker deliberately provides no offline conversation access.
+- Notification delivery is documented only; push subscriptions and permissions are not implemented.
+
+### Suggested Conventional Commit
+
+```text
+feat(admin): add pwa experience and session security hardening
 ```
 
 </details>

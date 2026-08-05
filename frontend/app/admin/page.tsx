@@ -2,6 +2,7 @@
 "use client";
 
 import { CustomerDetailsDrawer } from "@/components/admin/CustomerDetailsDrawer";
+import { PwaRegistration } from "@/components/admin/PwaRegistration";
 import { ConfirmationModal } from "@/components/shared/ConfirmationModal";
 import { DarkModeToggle } from "@/components/shared/DarkModeToggle";
 import { useConfirmationModal } from "@/hooks/use-modal";
@@ -39,8 +40,8 @@ import {
   Menu as MenuIcon,
   MessageCircleX,
   MessageSquare,
-  Phone,
   Pause,
+  Phone,
   Pin,
   Play,
   Search,
@@ -81,13 +82,48 @@ const isSameDay = (first: number, second: number) =>
   new Date(first).toDateString() === new Date(second).toDateString();
 
 const quickReplies = [
-  { shortcut: "/summary", label: "Summary", content: "Here’s a quick summary of how I can help. Could you share a little more about your goals and timeline?" },
-  { shortcut: "/pricing", label: "Pricing", content: "Project pricing depends on the scope, timeline, and technical requirements. Share a little about what you need and I’ll provide a tailored estimate." },
-  { shortcut: "/contact", label: "Contact", content: "You can reach Ogooluwani at hey@ogooluwaniadewale.com. Please include a short outline of your project, preferred timeline, and budget range." },
-  { shortcut: "/start", label: "Getting started", content: "To get started, share your project goals, the key features you need, your preferred timeline, and an estimated budget." },
-  { shortcut: "/technologies", label: "Technologies", content: "Projects are typically built with React, Next.js, TypeScript, Node.js, and modern cloud tooling. The stack is selected to fit the product’s needs." },
-  { shortcut: "/project", label: "Project process", content: "The process usually starts with discovery and scope, followed by design, development, feedback rounds, testing, and launch." },
-  { shortcut: "/timeline", label: "Timeline", content: "A project timeline depends on scope and feedback cycles. Once the requirements are clear, I can provide a realistic delivery plan." },
+  {
+    shortcut: "/summary",
+    label: "Summary",
+    content:
+      "Here’s a quick summary of how I can help. Could you share a little more about your goals and timeline?",
+  },
+  {
+    shortcut: "/pricing",
+    label: "Pricing",
+    content:
+      "Project pricing depends on the scope, timeline, and technical requirements. Share a little about what you need and I’ll provide a tailored estimate.",
+  },
+  {
+    shortcut: "/contact",
+    label: "Contact",
+    content:
+      "You can reach Ogooluwani at hey@ogooluwaniadewale.com. Please include a short outline of your project, preferred timeline, and budget range.",
+  },
+  {
+    shortcut: "/start",
+    label: "Getting started",
+    content:
+      "To get started, share your project goals, the key features you need, your preferred timeline, and an estimated budget.",
+  },
+  {
+    shortcut: "/technologies",
+    label: "Technologies",
+    content:
+      "Projects are typically built with React, Next.js, TypeScript, Node.js, and modern cloud tooling. The stack is selected to fit the product’s needs.",
+  },
+  {
+    shortcut: "/project",
+    label: "Project process",
+    content:
+      "The process usually starts with discovery and scope, followed by design, development, feedback rounds, testing, and launch.",
+  },
+  {
+    shortcut: "/timeline",
+    label: "Timeline",
+    content:
+      "A project timeline depends on scope and feedback cycles. Once the requirements are clear, I can provide a realistic delivery plan.",
+  },
 ];
 
 export default function AdminPage() {
@@ -279,9 +315,24 @@ export default function AdminPage() {
       );
     });
 
-    socket.on("conversation_ai_state", ({ conversationId, aiState }: { conversationId: string; aiState: "active" | "paused" }) => {
-      setConversations((previous) => previous.map((conversation) => conversation.id === conversationId ? { ...conversation, aiState } : conversation));
-    });
+    socket.on(
+      "conversation_ai_state",
+      ({
+        conversationId,
+        aiState,
+      }: {
+        conversationId: string;
+        aiState: "active" | "paused";
+      }) => {
+        setConversations((previous) =>
+          previous.map((conversation) =>
+            conversation.id === conversationId
+              ? { ...conversation, aiState }
+              : conversation,
+          ),
+        );
+      },
+    );
 
     socket.on("receive_message", (message: Message) => {
       const currentActiveId = selectedUserId;
@@ -503,10 +554,22 @@ export default function AdminPage() {
 
   const handleSend = async () => {
     if (isInputEmpty) return;
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      toast({
+        title: "You’re offline",
+        description: "Reconnect before sending a message.",
+        variant: "destructive",
+      });
+      return;
+    }
     const activeConv = conversations[conversations.length - 1];
     if (!activeConv) return;
     if (activeConv.aiState !== "paused") {
-      toast({ title: "Take over the conversation first", description: "Pause AI before sending an admin reply.", variant: "destructive" });
+      toast({
+        title: "Take over the conversation first",
+        description: "Pause AI before sending an admin reply.",
+        variant: "destructive",
+      });
       return;
     }
     const draftUserId = selectedUserId;
@@ -544,7 +607,11 @@ export default function AdminPage() {
               setConversations((previous) =>
                 previous.map((conversation) =>
                   conversation.id === activeConv.id
-                    ? { ...conversation, aiState: "paused", status: "transferred" }
+                    ? {
+                        ...conversation,
+                        aiState: "paused",
+                        status: "transferred",
+                      }
                     : conversation,
                 ),
               );
@@ -613,27 +680,100 @@ export default function AdminPage() {
     }
   };
 
-  const setAIState = async (conversationId: string, aiState: "active" | "paused") => {
-    const previousConversation = conversations.find((conversation) => conversation.id === conversationId);
+  const setAIState = async (
+    conversationId: string,
+    aiState: "active" | "paused",
+  ) => {
+    const previousConversation = conversations.find(
+      (conversation) => conversation.id === conversationId,
+    );
     setIsUpdatingAI(true);
-    setConversations((previous) => previous.map((conversation) => conversation.id === conversationId ? { ...conversation, aiState } : conversation));
+    setConversations((previous) =>
+      previous.map((conversation) =>
+        conversation.id === conversationId
+          ? { ...conversation, aiState }
+          : conversation,
+      ),
+    );
     try {
-      const result = await new Promise<{ ok?: boolean; error?: string; status?: string; timedOut?: boolean }>((resolve) => {
-        getSocket().timeout(10_000).emit("set_ai_state", { conversationId, aiState }, (error: Error | null, response?: { ok?: boolean; error?: string; status?: string }) => resolve(error ? { ok: false, timedOut: true } : response || { ok: false }));
+      const result = await new Promise<{
+        ok?: boolean;
+        error?: string;
+        status?: string;
+        timedOut?: boolean;
+      }>((resolve) => {
+        getSocket()
+          .timeout(10_000)
+          .emit(
+            "set_ai_state",
+            { conversationId, aiState },
+            (
+              error: Error | null,
+              response?: { ok?: boolean; error?: string; status?: string },
+            ) =>
+              resolve(
+                error
+                  ? { ok: false, timedOut: true }
+                  : response || { ok: false },
+              ),
+          );
       });
       if (!result.ok && !result.timedOut) {
-        setConversations((previous) => previous.map((conversation) => conversation.id === conversationId ? { ...conversation, aiState: previousConversation?.aiState, status: previousConversation?.status || conversation.status } : conversation));
-        toast({ title: "Unable to update AI", description: result.error || "Please try again.", variant: "destructive" });
+        setConversations((previous) =>
+          previous.map((conversation) =>
+            conversation.id === conversationId
+              ? {
+                  ...conversation,
+                  aiState: previousConversation?.aiState,
+                  status: previousConversation?.status || conversation.status,
+                }
+              : conversation,
+          ),
+        );
+        toast({
+          title: "Unable to update AI",
+          description: result.error || "Please try again.",
+          variant: "destructive",
+        });
         return false;
       }
       if (result.ok) {
-        setConversations((previous) => previous.map((conversation) => conversation.id === conversationId ? { ...conversation, aiState, status: result.status || conversation.status } : conversation));
+        setConversations((previous) =>
+          previous.map((conversation) =>
+            conversation.id === conversationId
+              ? {
+                  ...conversation,
+                  aiState,
+                  status: result.status || conversation.status,
+                }
+              : conversation,
+          ),
+        );
       }
-      toast({ title: aiState === "paused" ? "AI paused — you can reply now." : "AI resumed" });
+      toast({
+        title:
+          aiState === "paused"
+            ? "AI paused — you can reply now."
+            : "AI resumed",
+      });
       return true;
     } catch {
-      setConversations((previous) => previous.map((conversation) => conversation.id === conversationId ? { ...conversation, aiState: previousConversation?.aiState, status: previousConversation?.status || conversation.status } : conversation));
-      toast({ title: "Unable to update AI", description: "Please try again.", variant: "destructive" });
+      setConversations((previous) =>
+        previous.map((conversation) =>
+          conversation.id === conversationId
+            ? {
+                ...conversation,
+                aiState: previousConversation?.aiState,
+                status: previousConversation?.status || conversation.status,
+              }
+            : conversation,
+        ),
+      );
+      toast({
+        title: "Unable to update AI",
+        description: "Please try again.",
+        variant: "destructive",
+      });
       return false;
     } finally {
       setIsUpdatingAI(false);
@@ -642,7 +782,8 @@ export default function AdminPage() {
 
   const insertQuickReply = (content: string) => {
     setInput(content);
-    if (selectedUserId) setDrafts((previous) => ({ ...previous, [selectedUserId]: content }));
+    if (selectedUserId)
+      setDrafts((previous) => ({ ...previous, [selectedUserId]: content }));
     requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
@@ -651,33 +792,61 @@ export default function AdminPage() {
     if (!activeConversation) return;
     setIsGeneratingSummary(true);
     try {
-      const response = await adminApi.post(`/admin/chats/${activeConversation.id}/summary`);
+      const response = await adminApi.post(
+        `/admin/chats/${activeConversation.id}/summary`,
+      );
       const summary = response.data?.summary;
       if (!summary) throw new Error("No summary returned");
       insertQuickReply(summary);
-      toast({ title: "Summary inserted", description: "Review it before sending." });
+      toast({
+        title: "Summary inserted",
+        description: "Review it before sending.",
+      });
     } catch {
-      toast({ title: "Unable to create summary", description: "Please try again.", variant: "destructive" });
+      toast({
+        title: "Unable to create summary",
+        description: "Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setIsGeneratingSummary(false);
     }
   };
 
-  const rewriteDraft = async (mode: "professional" | "friendly" | "shorter" | "longer" | "grammar") => {
-    const draft = input.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim();
+  const rewriteDraft = async (
+    mode: "professional" | "friendly" | "shorter" | "longer" | "grammar",
+  ) => {
+    const draft = input
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .trim();
     if (!draft) {
-      toast({ title: "Write a draft first", description: "AI can suggest a rewrite after you have written a reply.", variant: "destructive" });
+      toast({
+        title: "Write a draft first",
+        description: "AI can suggest a rewrite after you have written a reply.",
+        variant: "destructive",
+      });
       return;
     }
     setIsRewriting(true);
     try {
-      const response = await adminApi.post("/admin/ai/rewrite", { draft, mode });
+      const response = await adminApi.post("/admin/ai/rewrite", {
+        draft,
+        mode,
+      });
       const rewritten = response.data?.content;
       if (!rewritten) throw new Error("No rewrite returned");
       insertQuickReply(rewritten);
-      toast({ title: "Draft rewritten", description: "Review and edit it before sending." });
+      toast({
+        title: "Draft rewritten",
+        description: "Review and edit it before sending.",
+      });
     } catch {
-      toast({ title: "Unable to rewrite draft", description: "Please try again.", variant: "destructive" });
+      toast({
+        title: "Unable to rewrite draft",
+        description: "Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setIsRewriting(false);
     }
@@ -1133,21 +1302,28 @@ export default function AdminPage() {
             return (conversationUnreadCounts[candidate.id] || 0) > 0;
           }
           if (activeFilter === "open") return onlineUsers.has(candidate.id);
-          if (activeFilter === "starred") return (candidate as any).isStarred === 1;
+          if (activeFilter === "starred")
+            return (candidate as any).isStarred === 1;
           return true;
         })
         .sort((first: any, second: any) => {
-          const pinnedDifference = Number(second.isPinned || 0) - Number(first.isPinned || 0);
+          const pinnedDifference =
+            Number(second.isPinned || 0) - Number(first.isPinned || 0);
           if (pinnedDifference) return pinnedDifference;
-          const starredDifference = Number(second.isStarred || 0) - Number(first.isStarred || 0);
+          const starredDifference =
+            Number(second.isStarred || 0) - Number(first.isStarred || 0);
           if (starredDifference) return starredDifference;
-          return new Date(second.lastMessageAt || second.createdAt).getTime() - new Date(first.lastMessageAt || first.createdAt).getTime();
+          return (
+            new Date(second.lastMessageAt || second.createdAt).getTime() -
+            new Date(first.lastMessageAt || first.createdAt).getTime()
+          );
         }),
     [activeFilter, conversationUnreadCounts, filteredUsers, onlineUsers],
   );
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100 text-slate-900 [&_button:not(:disabled)]:cursor-pointer [&_button:disabled]:cursor-not-allowed dark:bg-slate-950 dark:text-slate-100">
+      <PwaRegistration />
       {/* Sidebar Overlay for Mobile */}
       {sidebarOpen && (
         <div
@@ -1250,7 +1426,9 @@ export default function AdminPage() {
               <button
                 key={value}
                 onClick={() =>
-                  setActiveFilter(value as "all" | "unread" | "open" | "starred")
+                  setActiveFilter(
+                    value as "all" | "unread" | "open" | "starred",
+                  )
                 }
                 className={`rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${activeFilter === value ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"}`}
               >
@@ -1335,7 +1513,7 @@ export default function AdminPage() {
                     <img
                       src={`https://api.dicebear.com/9.x/notionists-neutral/svg?seed=${u.id}`}
                       alt=""
-                      className="h-11 w-11 rounded-full bg-slate-100"
+                      className="h-11 w-11 rounded-full bg-slate-100 border border-primary"
                     />
                     {onlineUsers.has(u.id) && (
                       <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-500 dark:border-slate-900" />
@@ -1429,7 +1607,7 @@ export default function AdminPage() {
                   <img
                     src={`https://api.dicebear.com/9.x/notionists-neutral/svg?seed=${currentUser.id}`}
                     alt=""
-                    className="h-10 w-10 rounded-full bg-slate-100"
+                    className="h-10 w-10 rounded-full bg-slate-100 border border-primary"
                   />
                   {onlineUsers.has(currentUser.id) && (
                     <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-500 dark:border-slate-900" />
@@ -1439,17 +1617,25 @@ export default function AdminPage() {
                   <h2 className="truncate font-semibold tracking-tight">
                     {getDisplayName(currentUser)}
                   </h2>
-                  <p className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${isUserOnline ? "bg-emerald-500" : "bg-slate-400"}`}
-                    />
-                    {isUserOnline ? "Online now" : "Away"}
+                  <p className="flex flex-col md:flex-row md:items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                    <span className="flex gap-1 items-center">
+                      <div
+                        className={`h-1.5 w-1.5 rounded-full ${isUserOnline ? "bg-emerald-500" : "bg-slate-400"}`}
+                      />
+                      {isUserOnline ? "Online now" : "Away"}{" "}
+                    </span>
+                    <span>
+                      {activeConversation && (
+                        <p
+                          className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${activeConversation.aiState === "paused" ? "bg-amber-50 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300" : "bg-violet-50 text-violet-700 dark:bg-violet-950/35 dark:text-violet-300"}`}
+                        >
+                          {activeConversation.aiState === "paused"
+                            ? "Admin handling"
+                            : "AI active"}
+                        </p>
+                      )}
+                    </span>
                   </p>
-                  {activeConversation && (
-                    <p className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${activeConversation.aiState === "paused" ? "bg-amber-50 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300" : "bg-violet-50 text-violet-700 dark:bg-violet-950/35 dark:text-violet-300"}`}>
-                      {activeConversation.aiState === "paused" ? "Admin handling" : "AI active"}
-                    </p>
-                  )}
                 </div>
               </div>
 
@@ -1469,7 +1655,7 @@ export default function AdminPage() {
                           isPinned: !activeConversation.isPinned,
                         })
                       }
-                      className={`rounded-lg p-2 transition hover:bg-slate-100 dark:hover:bg-slate-800 ${activeConversation.isPinned ? "text-primary" : "text-slate-500"}`}
+                      className={`hidden md:block rounded-lg p-2 transition hover:bg-slate-100 dark:hover:bg-slate-800 ${activeConversation.isPinned ? "text-primary" : "text-slate-500"}`}
                       aria-label={
                         activeConversation.isPinned
                           ? "Unpin conversation"
@@ -1490,7 +1676,7 @@ export default function AdminPage() {
                           isStarred: !activeConversation.isStarred,
                         })
                       }
-                      className={`rounded-lg p-2 transition hover:bg-slate-100 dark:hover:bg-slate-800 ${activeConversation.isStarred ? "text-amber-500" : "text-slate-500"}`}
+                      className={`hidden md:block rounded-lg p-2 transition hover:bg-slate-100 dark:hover:bg-slate-800 ${activeConversation.isStarred ? "text-amber-500" : "text-slate-500"}`}
                       aria-label={
                         activeConversation.isStarred
                           ? "Remove star"
@@ -1513,29 +1699,41 @@ export default function AdminPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setAIState(activeConversation.id, activeConversation.aiState === "paused" ? "active" : "paused")}
-                      disabled={isUpdatingAI || activeConversation.status === "closed"}
-                      className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50 ${activeConversation.aiState === "paused" ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/35 dark:text-emerald-300" : "bg-violet-50 text-violet-700 hover:bg-violet-100 dark:bg-violet-950/35 dark:text-violet-300"}`}
-                      aria-label={activeConversation.aiState === "paused" ? "Resume AI" : "Take over conversation"}
-                      title={activeConversation.aiState === "paused" ? "Resume AI" : "Take over conversation"}
-                    >
-                      {isUpdatingAI ? <Loader2 size={16} className="animate-spin" /> : activeConversation.aiState === "paused" ? <Play size={16} /> : <Pause size={16} />}
-                      {activeConversation.aiState === "paused" ? "Resume AI" : "Take over"}
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={() =>
-                        copyText(
-                          `${window.location.origin}/admin?conversation=${activeConversation.id}`,
-                          "Conversation link copied",
+                        setAIState(
+                          activeConversation.id,
+                          activeConversation.aiState === "paused"
+                            ? "active"
+                            : "paused",
                         )
                       }
-                      className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
-                      aria-label="Copy conversation link"
-                      title="Copy conversation link"
+                      disabled={
+                        isUpdatingAI || activeConversation.status === "closed"
+                      }
+                      className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50 ${activeConversation.aiState === "paused" ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/35 dark:text-emerald-300" : "bg-violet-50 text-violet-700 hover:bg-violet-100 dark:bg-violet-950/35 dark:text-violet-300"}`}
+                      aria-label={
+                        activeConversation.aiState === "paused"
+                          ? "Resume AI"
+                          : "Take over conversation"
+                      }
+                      title={
+                        activeConversation.aiState === "paused"
+                          ? "Resume AI"
+                          : "Take over conversation"
+                      }
                     >
-                      <Copy size={18} />
+                      {isUpdatingAI ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : activeConversation.aiState === "paused" ? (
+                        <Play size={16} />
+                      ) : (
+                        <Pause size={16} />
+                      )}
+                      <span className="hidden md:block">
+                        {activeConversation.aiState === "paused"
+                          ? "Resume AI"
+                          : "Take over"}
+                      </span>
                     </button>
                   </>
                 )}
@@ -1733,9 +1931,18 @@ export default function AdminPage() {
                                 5 * 60_000;
                             if (isTransferNotice) {
                               return (
-                                <div key={msg.id || idx} className="my-4 flex items-center gap-3" role="status">
+                                <div
+                                  key={msg.id || idx}
+                                  className="my-4 flex items-center gap-3"
+                                  role="status"
+                                >
                                   <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
-                                  <span className="max-w-[75%] text-center text-xs text-slate-500 dark:text-slate-400" dangerouslySetInnerHTML={{ __html: sanitizedContent(msg.content) }} />
+                                  <span
+                                    className="max-w-[75%] text-center text-xs text-slate-500 dark:text-slate-400"
+                                    dangerouslySetInnerHTML={{
+                                      __html: sanitizedContent(msg.content),
+                                    }}
+                                  />
                                   <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
                                 </div>
                               );
@@ -1883,10 +2090,15 @@ export default function AdminPage() {
               activeConversation.aiState !== "paused" && (
                 <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
                   <div className="mx-auto flex max-w-3xl flex-col gap-2 rounded-xl border border-violet-100 bg-violet-50/70 px-3 py-2.5 text-sm text-violet-900 dark:border-violet-900/60 dark:bg-violet-950/25 dark:text-violet-100 sm:flex-row sm:items-center sm:justify-between">
-                    <span><strong>AI Active.</strong> Robot is responding to this visitor. Take over when you need to reply personally.</span>
+                    <span>
+                      <strong>AI Active.</strong> Robot is responding to this
+                      visitor. Take over when you need to reply personally.
+                    </span>
                     <button
                       type="button"
-                      onClick={() => setAIState(activeConversation.id, "paused")}
+                      onClick={() =>
+                        setAIState(activeConversation.id, "paused")
+                      }
                       disabled={isUpdatingAI}
                       className="shrink-0 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -1902,17 +2114,27 @@ export default function AdminPage() {
               conversations[conversations.length - 1]?.aiState === "paused" && (
                 <div className="shrink-0 border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900 sm:p-4">
                   <div className="mx-auto mb-3 flex max-w-3xl flex-wrap items-center gap-2">
-                    <span className="mr-1 text-xs font-medium text-slate-500">Quick replies</span>
+                    <span className="mr-1 text-xs font-medium text-slate-500">
+                      Quick replies
+                    </span>
                     {quickReplies.map((reply) => (
                       <button
                         key={reply.shortcut}
                         type="button"
-                        onClick={() => reply.shortcut === "/summary" ? insertConversationSummary() : insertQuickReply(reply.content)}
-                        disabled={reply.shortcut === "/summary" && isGeneratingSummary}
+                        onClick={() =>
+                          reply.shortcut === "/summary"
+                            ? insertConversationSummary()
+                            : insertQuickReply(reply.content)
+                        }
+                        disabled={
+                          reply.shortcut === "/summary" && isGeneratingSummary
+                        }
                         className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:border-primary/30 hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:border-slate-700 dark:text-slate-300 dark:hover:bg-primary/10"
                         title={`Insert ${reply.shortcut}`}
                       >
-                        {reply.shortcut === "/summary" && isGeneratingSummary ? "Generating…" : reply.shortcut}
+                        {reply.shortcut === "/summary" && isGeneratingSummary
+                          ? "Generating…"
+                          : reply.shortcut}
                       </button>
                     ))}
                   </div>
@@ -1956,7 +2178,9 @@ export default function AdminPage() {
                     </button>
                   </div>
                   <div className="mx-auto mt-2 flex max-w-3xl flex-wrap items-center gap-1.5">
-                    <span className="mr-1 inline-flex items-center gap-1 text-xs font-medium text-violet-700 dark:text-violet-300"><Sparkles size={13} /> Rewrite with AI</span>
+                    <span className="mr-1 inline-flex items-center gap-1 text-xs font-medium text-violet-700 dark:text-violet-300">
+                      <Sparkles size={13} /> Rewrite with AI
+                    </span>
                     {[
                       ["professional", "Professional"],
                       ["friendly", "Friendly"],
@@ -1968,7 +2192,16 @@ export default function AdminPage() {
                         key={label}
                         type="button"
                         disabled={isRewriting || isInputEmpty}
-                        onClick={() => rewriteDraft(mode as "professional" | "friendly" | "shorter" | "longer" | "grammar")}
+                        onClick={() =>
+                          rewriteDraft(
+                            mode as
+                              | "professional"
+                              | "friendly"
+                              | "shorter"
+                              | "longer"
+                              | "grammar",
+                          )
+                        }
                         className="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-violet-950/35 dark:text-violet-300 dark:hover:bg-violet-950/55"
                       >
                         {isRewriting ? "Rewriting…" : label}

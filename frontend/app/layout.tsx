@@ -11,8 +11,15 @@ const space = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Chat Widget",
+  title: "Portfolio Chat",
   description: "Ogooluwani's Chat Widget",
+  applicationName: "Portfolio Chat Admin",
+  themeColor: "#7c3aed",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Chat Admin",
+  },
 };
 
 export default function RootLayout({

@@ -15,6 +15,7 @@ import { logger } from "./utils/logger.js";
 import { randomUUID } from "crypto";
 import { closeDatabase, initializeDatabase } from "./db.js";
 import { createRateLimiter } from "./middleware/rateLimit.js";
+import { isAdminSessionActive } from "./middleware/adminAuth.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -48,6 +49,9 @@ app.use((req, res, next) => {
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader("Content-Security-Policy", "default-src 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'");
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  if (req.path.startsWith("/admin") || req.path.startsWith("/auth/admin") || req.path.startsWith("/api/")) {
+    res.setHeader("Cache-Control", "no-store");
+  }
   const sendJson = res.json.bind(res);
   res.json = (body) => {
     if (res.statusCode >= 400 && !(body?.error?.code && body?.error?.message)) {
@@ -127,7 +131,7 @@ app.use((error, req, res, next) => {
   });
 });
 
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   try {
     const ip = socket.handshake.address || "unknown";
     const now = Date.now();
@@ -156,6 +160,10 @@ io.use((socket, next) => {
       logger.warn("socket_permission_denied", { socketId: socket.id, reason: "missing_principal" });
       return next(new Error("Unauthorised"));
     }
+    if (authenticatedPrincipal.role === "admin" && !(await isAdminSessionActive(authenticatedPrincipal))) {
+      logger.warn("socket_permission_denied", { socketId: socket.id, reason: "expired_admin_session" });
+      return next(new Error("Session expired"));
+    }
     socket.data.principal = authenticatedPrincipal;
     next();
   } catch (error) {
@@ -173,6 +181,14 @@ io.on("connection", (socket) => {
     actorRole: socket.data.principal.role,
   });
   handleSocketConnection(io, socket);
+  if (socket.data.principal.role === "admin" && socket.data.principal.exp) {
+    const delay = Math.max(0, socket.data.principal.exp * 1000 - Date.now());
+    const expiryTimer = setTimeout(() => {
+      socket.emit("session_expired");
+      socket.disconnect(true);
+    }, delay);
+    socket.once("disconnect", () => clearTimeout(expiryTimer));
+  }
 });
 
 const PORT = process.env.PORT || 3001;

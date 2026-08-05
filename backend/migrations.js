@@ -194,6 +194,22 @@ const migrations = [
       await db.run("UPDATE conversations SET aiState = 'paused' WHERE status = 'transferred'");
     },
   },
+  {
+    id: "006_admin_sessions",
+    async up(db) {
+      await db.exec(`
+        CREATE TABLE IF NOT EXISTS admin_sessions (
+          id TEXT PRIMARY KEY,
+          tenantId TEXT NOT NULL,
+          expiresAt DATETIME NOT NULL,
+          invalidatedAt DATETIME,
+          createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_admin_sessions_active
+          ON admin_sessions(tenantId, expiresAt DESC) WHERE invalidatedAt IS NULL;
+      `);
+    },
+  },
 ];
 
 export async function runMigrations(db) {

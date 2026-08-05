@@ -12,11 +12,12 @@ import {
   Mail,
   ShieldCheck,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 export default function AdminAuthPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [form, setForm] = useState({
@@ -92,6 +93,11 @@ export default function AdminAuthPage() {
       <section className="flex items-center justify-center lg:p-10">
         <Card className="w-full max-w-md border border-slate-200/80 bg-white shadow-xl shadow-slate-950/5 dark:border-slate-800 dark:bg-slate-900">
           <CardHeader className="space-y-4 pb-6">
+            {searchParams.get("reason") === "session-expired" && (
+              <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Your admin session expired. Please log in again.
+              </div>
+            )}
             <div className="flex items-center gap-3 lg:hidden">
               <div className="rounded-xl bg-primary/10 p-2 text-primary">
                 <ShieldCheck className="h-5 w-5" />
