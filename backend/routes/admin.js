@@ -5,10 +5,85 @@ import { sendEmail, exportConversation } from "../utils/email/email.js";
 import { recordAuditEvent } from "../utils/audit.js";
 import { searchMessages } from "../services/messageSearchService.js";
 import { randomUUID } from "crypto";
+import { generateAssistantText } from "../controllers/aiController.js";
 
 const router = Router();
 
 router.use(authenticateAdmin);
+
+async function getChatHistory(db, conversationId, tenantId) {
+  const conversation = await db.get("SELECT c.*, u.firstName, u.lastName, u.email FROM conversations c JOIN users u ON u.id = c.userId WHERE c.id = ? AND c.tenantId = ?", [conversationId, tenantId]);
+  if (!conversation) return null;
+  const messages = await db.all("SELECT senderId, content, timestamp FROM messages WHERE conversationId = ? ORDER BY timestamp ASC LIMIT 50", [conversationId]);
+  return { conversation, messages };
+}
+
+router.post("/chats/:id/ai-state", async (req, res) => {
+  try {
+    const aiState = req.body?.aiState;
+    if (!['active', 'paused'].includes(aiState)) return res.status(400).json({ error: "Invalid AI state" });
+    const db = await openDB();
+    const result = await db.run("UPDATE conversations SET aiState = ? WHERE id = ? AND tenantId = ?", [aiState, req.params.id, req.admin.tenantId]);
+    if (!result.changes) return res.status(404).json({ error: "Chat not found" });
+    await recordAuditEvent(db, { tenantId: req.admin.tenantId, actorId: req.admin.id, actorRole: req.admin.role, action: `admin.ai.${aiState}`, resourceType: "conversation", resourceId: req.params.id });
+    res.json({ aiState });
+  } catch (error) { res.status(500).json({ error: "Failed to update AI state" }); }
+});
+
+router.post("/chats/:id/summary", async (req, res) => {
+  try {
+    const db = await openDB();
+    const chat = await getChatHistory(db, req.params.id, req.admin.tenantId);
+    if (!chat) return res.status(404).json({ error: "Chat not found" });
+    const summary = await generateAssistantText({ instructions: "Summarise this visitor conversation for its owner in 3 concise bullet points: need, relevant context, and next action.", conversationHistory: chat.messages });
+    await db.run("UPDATE conversations SET summary = ?, summaryUpdatedAt = CURRENT_TIMESTAMP WHERE id = ? AND tenantId = ?", [summary, req.params.id, req.admin.tenantId]);
+    res.json({ summary });
+  } catch (error) { res.status(502).json({ error: "Unable to generate summary" }); }
+});
+
+router.post("/ai/rewrite", async (req, res) => {
+  try {
+    const { draft, mode = 'professional', language = 'English' } = req.body || {};
+    if (typeof draft !== 'string' || !draft.trim() || draft.length > 4000) return res.status(400).json({ error: "A draft of up to 4,000 characters is required" });
+    const modes = { professional: 'professional and clear', friendly: 'warm and friendly', shorter: 'shorter while preserving meaning', longer: 'more detailed but concise' };
+    if (!modes[mode]) return res.status(400).json({ error: "Invalid rewrite mode" });
+    const content = await generateAssistantText({ instructions: `Rewrite the following reply to be ${modes[mode]}. Translate it to ${language} when that is not English. Preserve facts and do not add commitments.\n\nDRAFT:\n${draft}`, conversationHistory: [] });
+    res.json({ content });
+  } catch (error) { res.status(502).json({ error: "Unable to rewrite draft" }); }
+});
+
+router.get("/saved-replies", async (req, res) => {
+  const db = await openDB();
+  const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  const rows = await db.all(`SELECT * FROM saved_replies WHERE tenantId = ? ${query ? 'AND (shortcut LIKE ? OR title LIKE ? OR content LIKE ?)' : ''} ORDER BY shortcut`, query ? [req.admin.tenantId, `%${query}%`, `%${query}%`, `%${query}%`] : [req.admin.tenantId]);
+  res.json(rows);
+});
+
+router.post("/saved-replies", async (req, res) => {
+  try {
+    const { shortcut, title, content } = req.body || {};
+    if (![shortcut, title, content].every((value) => typeof value === 'string' && value.trim()) || shortcut.length > 40 || content.length > 4000) return res.status(400).json({ error: "Shortcut, title and content are required" });
+    const db = await openDB(); const reply = { id: randomUUID(), shortcut: shortcut.trim().replace(/^\/?/, '/'), title: title.trim(), content: content.trim() };
+    await db.run("INSERT INTO saved_replies (id, tenantId, shortcut, title, content) VALUES (?, ?, ?, ?, ?)", [reply.id, req.admin.tenantId, reply.shortcut, reply.title, reply.content]);
+    res.status(201).json(reply);
+  } catch (error) { res.status(409).json({ error: "That shortcut already exists" }); }
+});
+
+router.put("/saved-replies/:id", async (req, res) => {
+  const { shortcut, title, content } = req.body || {};
+  if (![shortcut, title, content].every((value) => typeof value === 'string' && value.trim())) return res.status(400).json({ error: "Shortcut, title and content are required" });
+  const db = await openDB();
+  const result = await db.run("UPDATE saved_replies SET shortcut = ?, title = ?, content = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ? AND tenantId = ?", [shortcut.trim().replace(/^\/?/, '/'), title.trim(), content.trim(), req.params.id, req.admin.tenantId]);
+  if (!result.changes) return res.status(404).json({ error: "Saved reply not found" });
+  res.json({ id: req.params.id, shortcut: shortcut.trim().replace(/^\/?/, '/'), title: title.trim(), content: content.trim() });
+});
+
+router.delete("/saved-replies/:id", async (req, res) => {
+  const db = await openDB();
+  const result = await db.run("DELETE FROM saved_replies WHERE id = ? AND tenantId = ?", [req.params.id, req.admin.tenantId]);
+  if (!result.changes) return res.status(404).json({ error: "Saved reply not found" });
+  res.json({ success: true });
+});
 
 // Get all users
 router.get("/users", async (req, res) => {
@@ -138,6 +213,9 @@ router.get("/conversations/:userId", async (req, res) => {
 
         return {
           ...conv,
+          // A human-owned conversation must never hydrate as AI-active, even
+          // when it predates the durable aiState column.
+          aiState: conv.status === "transferred" ? "paused" : conv.aiState || "active",
           messages: messages.map((msg) => ({
             ...msg,
             timestamp: new Date(msg.timestamp).getTime(),

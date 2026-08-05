@@ -40,7 +40,9 @@ import {
   MessageCircleX,
   MessageSquare,
   Phone,
+  Pause,
   Pin,
+  Play,
   Search,
   Send,
   Star,
@@ -108,6 +110,7 @@ export default function AdminPage() {
       isPinned?: number;
       isStarred?: number;
       snoozedUntil?: string | null;
+      aiState?: "active" | "paused";
     }[]
   >([]);
   const [conversationUnreadCounts, setConversationUnreadCounts] = useState<
@@ -262,6 +265,10 @@ export default function AdminPage() {
       );
     });
 
+    socket.on("conversation_ai_state", ({ conversationId, aiState }: { conversationId: string; aiState: "active" | "paused" }) => {
+      setConversations((previous) => previous.map((conversation) => conversation.id === conversationId ? { ...conversation, aiState } : conversation));
+    });
+
     socket.on("receive_message", (message: Message) => {
       const currentActiveId = selectedUserId;
 
@@ -288,6 +295,9 @@ export default function AdminPage() {
 
             return {
               ...conv,
+              ...(message.senderId === "admin"
+                ? { aiState: "paused" as const, status: "transferred" }
+                : {}),
               messages: [...conv.messages, message],
             };
           }
@@ -301,6 +311,7 @@ export default function AdminPage() {
       socket.off("user_stopped_typing");
       socket.off("conversation_closed");
       socket.off("conversation_deleted");
+      socket.off("conversation_ai_state");
     };
   }, []);
 
@@ -511,6 +522,14 @@ export default function AdminPage() {
                 description: "Your message was restored. Please try again.",
                 variant: "destructive",
               });
+            } else {
+              setConversations((previous) =>
+                previous.map((conversation) =>
+                  conversation.id === activeConv.id
+                    ? { ...conversation, aiState: "paused", status: "transferred" }
+                    : conversation,
+                ),
+              );
             }
           },
         );
@@ -574,6 +593,18 @@ export default function AdminPage() {
         variant: "destructive",
       });
     }
+  };
+
+  const setAIState = async (conversationId: string, aiState: "active" | "paused") => {
+    const result = await new Promise<{ ok?: boolean; error?: string; status?: string }>((resolve) => {
+      getSocket().timeout(10_000).emit("set_ai_state", { conversationId, aiState }, (error: Error | null, response?: { ok?: boolean; error?: string; status?: string }) => resolve(error ? { ok: false, error: "The request timed out" } : response || { ok: false }));
+    });
+    if (!result.ok) {
+      toast({ title: "Unable to update AI", description: result.error || "Please try again.", variant: "destructive" });
+      return;
+    }
+    setConversations((previous) => previous.map((conversation) => conversation.id === conversationId ? { ...conversation, aiState, status: result.status || conversation.status } : conversation));
+    toast({ title: aiState === "paused" ? "AI paused" : "AI resumed" });
   };
 
   const applyBulkAction = async (
@@ -1399,6 +1430,15 @@ export default function AdminPage() {
                         }
                       />
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setAIState(activeConversation.id, activeConversation.aiState === "paused" ? "active" : "paused")}
+                      className={`rounded-lg p-2 transition hover:bg-slate-100 dark:hover:bg-slate-800 ${activeConversation.aiState === "paused" ? "text-slate-400" : "text-violet-600"}`}
+                      aria-label={activeConversation.aiState === "paused" ? "Resume AI" : "Pause AI"}
+                      title={activeConversation.aiState === "paused" ? "Resume AI" : "Pause AI"}
+                    >
+                      {activeConversation.aiState === "paused" ? <Play size={18} /> : <Pause size={18} />}
+                    </button>
 
                     <button
                       type="button"
@@ -1592,16 +1632,31 @@ export default function AdminPage() {
                             const isAdmin =
                               msg.senderId === "admin" ||
                               msg.senderRole === "admin";
+                            const isSystem = msg.senderId === "system";
+                            const isTransferNotice =
+                              isSystem &&
+                              /connected to Ogooluwani|connecting you to Ogooluwani|AI assistant.*resumed|Robot is assisting you again/i.test(
+                                msg.content || "",
+                              );
                             const isAI =
                               msg.senderId === "ai" ||
                               msg.sender?.role === "ai" ||
-                              msg.senderId === "system";
+                              isSystem;
                             const isGrouped =
                               previousMessage &&
                               previousMessage.senderId === msg.senderId &&
                               new Date(msg.timestamp).getTime() -
                                 new Date(previousMessage.timestamp).getTime() <
                                 5 * 60_000;
+                            if (isTransferNotice) {
+                              return (
+                                <div key={msg.id || idx} className="my-4 flex items-center gap-3" role="status">
+                                  <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+                                  <span className="max-w-[75%] text-center text-xs text-slate-500 dark:text-slate-400" dangerouslySetInnerHTML={{ __html: sanitizedContent(msg.content) }} />
+                                  <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+                                </div>
+                              );
+                            }
                             return (
                               <div key={msg.id || idx}>
                                 {(!previousMessage ||

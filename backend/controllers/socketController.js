@@ -10,6 +10,7 @@ import { sanitizeHTML } from "../utils/sanitize.js";
 import { getMessagesPage } from "../services/conversationService.js";
 import { recordAuditEvent } from "../utils/audit.js";
 import { logger } from "../utils/logger.js";
+import { notifyTelegram } from "../services/telegramService.js";
 
 const onlineUsers = new Map();
 const userSockets = new Map();
@@ -177,7 +178,7 @@ export function handleSocketConnection(io, socket) {
       const db = await openDB();
 
       const conversation = await db.get(
-        "SELECT status, userId, tenantId FROM conversations WHERE id = ? AND tenantId = ?",
+        "SELECT status, aiState, userId, tenantId FROM conversations WHERE id = ? AND tenantId = ?",
         [conversationId, principal.tenantId],
       );
 
@@ -192,7 +193,28 @@ export function handleSocketConnection(io, socket) {
       // the common path. Do not allow AI to resume after a human handover.
       const isAdminHandled =
         conversationAdminStatus.get(conversationId) ||
-        conversation.status === "transferred";
+        conversation.status === "transferred" ||
+        conversation.aiState === "paused";
+
+      // Persist and announce handover before the first human reply is stored or
+      // broadcast, so visitors see the ownership change in the correct order.
+      const adminTookOver = senderId === "admin" && !isAdminHandled;
+      if (adminTookOver) {
+        await db.run(
+          "UPDATE conversations SET status = 'transferred', aiState = 'paused' WHERE id = ? AND tenantId = ?",
+          [conversationId, principal.tenantId],
+        );
+        conversationAdminStatus.set(conversationId, true);
+        pendingTransferRequests.delete(conversationId);
+        notifyTelegram(`AI handover: ${conversationId}`).catch(() => {});
+        io.to(`conversation-${conversationId}`).emit("conversation_ai_state", { conversationId, aiState: "paused" });
+        io.to(`conversation-${conversationId}`).emit("system_offline_for_conversation", conversationId);
+        await sendSystemMessage(
+          io,
+          conversationId,
+          "You've been connected to Ogooluwani. He's now assisting you personally.",
+        );
+      }
 
       // Save message
       const timestamp = new Date().toISOString();
@@ -220,6 +242,10 @@ export function handleSocketConnection(io, socket) {
       }
 
       logger.info("message_persisted", { tenantId: principal.tenantId, conversationId, messageId: id, senderId });
+      if (senderId !== "admin") {
+        const count = await db.get("SELECT COUNT(*) AS count FROM messages WHERE conversationId = ?", [conversationId]);
+        if (count.count === 1) notifyTelegram(`New conversation: ${conversationId}`).catch(() => {});
+      }
       await recordAuditEvent(db, {
         tenantId: principal.tenantId,
         actorId: principal.id,
@@ -229,22 +255,6 @@ export function handleSocketConnection(io, socket) {
         resourceId: id,
         metadata: { conversationId },
       });
-
-      // Claim the conversation before broadcasting the human reply. This closes
-      // the race where an already-running AI request could emit after an admin.
-      const adminTookOver = senderId === "admin" && !isAdminHandled;
-      if (adminTookOver) {
-        await db.run(
-          "UPDATE conversations SET status = 'transferred' WHERE id = ? AND tenantId = ?",
-          [conversationId, principal.tenantId],
-        );
-        conversationAdminStatus.set(conversationId, true);
-        pendingTransferRequests.delete(conversationId);
-        io.to(`conversation-${conversationId}`).emit(
-          "system_offline_for_conversation",
-          conversationId,
-        );
-      }
 
       // Get sender info
       let sender = null;
@@ -281,18 +291,7 @@ export function handleSocketConnection(io, socket) {
         messageWithSender,
       );
       respond(acknowledge, { ok: true, message: messageWithSender });
-      // ADMIN JOINS - Switch from AI to Human
-      if (adminTookOver) {
-        setTimeout(async () => {
-          await sendSystemMessage(
-            io,
-            conversationId,
-            "You've been connected to Ogooluwani. He's now assisting you personally.",
-          );
-        }, 500);
-
-        return;
-      }
+      if (adminTookOver) return;
 
       // If admin is handling, skip AI logic
       if (isAdminHandled) {
@@ -307,12 +306,13 @@ export function handleSocketConnection(io, socket) {
       if (pendingTransferRequests.has(conversationId)) {
         if (lowerContent === "yes" || lowerContent === "y") {
           await db.run(
-            "UPDATE conversations SET status = 'transferred' WHERE id = ? AND tenantId = ?",
+            "UPDATE conversations SET status = 'transferred', aiState = 'paused' WHERE id = ? AND tenantId = ?",
             [conversationId, principal.tenantId],
           );
 
           conversationAdminStatus.set(conversationId, true);
           pendingTransferRequests.delete(conversationId);
+          io.to(`conversation-${conversationId}`).emit("conversation_ai_state", { conversationId, aiState: "paused" });
 
           io.to(`conversation-${conversationId}`).emit("system_offline_for_conversation", conversationId);
 
@@ -320,7 +320,7 @@ export function handleSocketConnection(io, socket) {
             await sendSystemMessage(
               io,
               conversationId,
-              "Perfect! I'm connecting you to Ogooluwani now. He'll be with you shortly.",
+              "You've been connected to Ogooluwani. He's now assisting you personally.",
             );
 
             const user = await db.get("SELECT * FROM users WHERE id = ? AND tenantId = ?", [senderId, principal.tenantId]);
@@ -457,6 +457,37 @@ export function handleSocketConnection(io, socket) {
     const userData = userSockets.get(socket.id);
     if (!userData || !conversationId || !socket.rooms.has(`conversation-${conversationId}`)) return;
     clearTyping(io, conversationId, userData.id);
+  });
+
+  socket.on("set_ai_state", async ({ conversationId, aiState } = {}, acknowledge) => {
+    try {
+      if (principal.role !== "admin" || !conversationId || !["active", "paused"].includes(aiState)) {
+        return respond(acknowledge, { ok: false, error: "Permission denied" });
+      }
+      const db = await openDB();
+      const conversation = await db.get("SELECT id, userId, status, aiState FROM conversations WHERE id = ? AND tenantId = ?", [conversationId, principal.tenantId]);
+      if (!conversation || conversation.status === "closed") return respond(acknowledge, { ok: false, error: "Conversation is unavailable" });
+      if (aiState === "active") {
+        const otherOpen = await db.get("SELECT id FROM conversations WHERE tenantId = ? AND userId = ? AND status = 'open' AND id != ?", [principal.tenantId, conversation.userId, conversationId]);
+        if (otherOpen) return respond(acknowledge, { ok: false, error: "This visitor already has an active chat" });
+      }
+      await db.run("UPDATE conversations SET aiState = ?, status = ? WHERE id = ? AND tenantId = ?", [aiState, aiState === "active" ? "open" : conversation.status, conversationId, principal.tenantId]);
+      if (aiState === "active") {
+        conversationAdminStatus.delete(conversationId);
+        await sendSystemMessage(io, conversationId, "Robot is assisting you again.");
+      } else {
+        conversationAdminStatus.set(conversationId, true);
+        if (conversation.aiState !== "paused") {
+          await sendSystemMessage(io, conversationId, "You've been connected to Ogooluwani. He's now assisting you personally.");
+        }
+      }
+      io.to(`conversation-${conversationId}`).emit("conversation_ai_state", { conversationId, aiState });
+      await recordAuditEvent(db, { tenantId: principal.tenantId, actorId: principal.id, actorRole: principal.role, action: `admin.ai.${aiState}`, resourceType: "conversation", resourceId: conversationId });
+      respond(acknowledge, { ok: true, aiState, status: aiState === "active" ? "open" : conversation.status });
+    } catch (error) {
+      logger.error("socket_ai_state_error", { socketId: socket.id, tenantId: principal.tenantId, errorName: error.name, errorMessage: error.message });
+      respond(acknowledge, { ok: false, error: "Unable to update AI state" });
+    }
   });
 
   // Close conversation

@@ -14,6 +14,7 @@ This document is a chronological development log for completed project phases.
 | P006 | 2026-07-31 | ✅ Completed | `feat(admin): polish premium support inbox workspace` |
 | P006.1 | 2026-07-31 | ✅ Completed | `fix(admin): stabilise handover and conversation controls` |
 | P007 | 2026-08-04 | ✅ Completed | `feat(admin): add inbox productivity and conversation intelligence` |
+| P008 | 2026-08-05 | ✅ Completed | `feat(ai): add remote assistant controls and Telegram adapter` |
 
 <details>
 <summary><strong>P001 — Security Hardening Foundation</strong></summary>
@@ -351,6 +352,52 @@ P008 — Not started.
 
 ```text
 feat(admin): add inbox productivity and conversation intelligence
+```
+
+</details>
+
+<details>
+<summary><strong>P008 — AI Assistant &amp; Remote Conversations</strong></summary>
+
+### Objective
+
+Improve AI ownership and context while allowing the single portfolio owner to manage conversations remotely.
+
+### Work Completed
+
+- Added durable per-conversation AI active/paused state, summary storage, and visitor-journey storage.
+- Added tenant-scoped APIs for AI pause/resume, AI summaries, draft rewrite/tone/translation assistance, and saved replies.
+- Added saved-reply persistence with create, search, edit, and delete endpoints.
+- Added a compact AI pause/resume control to the existing admin header.
+- Added a channel-neutral remote-admin delivery service and an optional Telegram long-polling adapter. Telegram replies persist as `admin` messages, pause AI, and emit through the same conversation room as web-admin replies.
+- Added Telegram commands: `/active`, `/reply`, `/pause`, `/resume`, `/close`, and `/summary`; the adapter accepts commands only from `TELEGRAM_ADMIN_CHAT_ID`.
+- Added optional Telegram new-conversation and handover notifications.
+
+### Security Decisions
+
+- Telegram configuration is opt-in through `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ADMIN_CHAT_ID`; without both values, no polling or external request occurs.
+- All database access remains scoped to the default tenant and admin APIs remain protected by existing admin authentication.
+
+### Verification
+
+- Ran syntax checks for changed backend modules successfully.
+- Ran frontend TypeScript successfully.
+- Ran targeted lint with no errors; four existing hook-dependency warnings remain.
+- Live Telegram verification remains pending configured bot credentials and an authorised chat ID.
+
+### Remaining Risks
+
+- Telegram polling is appropriate for a single-admin deployment; production webhook delivery should be configured when a stable public backend URL is available.
+- The saved-reply and draft-assist UI insertion workflow is the next incremental UI enhancement; APIs are available now.
+
+### Next Phase
+
+P009 — Not started.
+
+### Suggested Conventional Commit
+
+```text
+feat(ai): add remote assistant controls and Telegram adapter
 ```
 
 </details>

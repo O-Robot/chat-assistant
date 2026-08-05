@@ -13,6 +13,7 @@ import { handleSocketConnection } from "./controllers/socketController.js";
 import { assertAuthConfiguration, getSocketPrincipal, verifyToken } from "./middleware/auth.js";
 import { logger } from "./utils/logger.js";
 import { randomUUID } from "crypto";
+import { startTelegramBot } from "./services/telegramService.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -97,6 +98,8 @@ const io = new Server(server, {
   path: "/socket.io/",
   transports: ["polling", "websocket"],
 });
+
+startTelegramBot(io);
 
 io.use((socket, next) => {
   try {

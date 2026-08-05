@@ -50,6 +50,22 @@ router.get("/:id", authenticateVisitor, async (req, res) => {
   }
 });
 
+router.post("/:id/journey", authenticateVisitor, async (req, res) => {
+  try {
+    if (req.principal.id !== req.params.id) return res.status(403).json({ message: "Forbidden" });
+    const { conversationId, currentPage, referrer, visitedPages, userAgent } = req.body || {};
+    if (!conversationId || typeof currentPage !== "string") return res.status(400).json({ message: "Invalid journey data" });
+    const db = await openDB();
+    const conversation = await db.get("SELECT id FROM conversations WHERE id = ? AND userId = ? AND tenantId = ?", [conversationId, req.principal.id, req.principal.tenantId]);
+    if (!conversation) return res.status(404).json({ message: "Conversation not found" });
+    const pages = Array.isArray(visitedPages) ? visitedPages.filter((page) => typeof page === "string").slice(-20) : [];
+    await db.run(`INSERT INTO conversation_journeys (conversationId, tenantId, currentPage, referrer, visitedPages, userAgent, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(conversationId) DO UPDATE SET currentPage = excluded.currentPage, referrer = excluded.referrer, visitedPages = excluded.visitedPages, userAgent = excluded.userAgent, updatedAt = CURRENT_TIMESTAMP`, [conversationId, req.principal.tenantId, currentPage.slice(0, 500), typeof referrer === "string" ? referrer.slice(0, 1000) : null, JSON.stringify(pages), typeof userAgent === "string" ? userAgent.slice(0, 1000) : null]);
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ message: "Unable to save journey" }); }
+});
+
 router.post("/", async (req, res) => {
   try {
     const { firstName, lastName, email, phone, country } = req.body;

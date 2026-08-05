@@ -156,6 +156,44 @@ const migrations = [
       await db.run("UPDATE conversations SET status = 'open' WHERE status = 'archived'");
     },
   },
+  {
+    id: "004_ai_and_remote_admin",
+    async up(db) {
+      const columns = await db.all("PRAGMA table_info(conversations)");
+      if (!columns.some((column) => column.name === "aiState")) await db.exec("ALTER TABLE conversations ADD COLUMN aiState TEXT NOT NULL DEFAULT 'active'");
+      if (!columns.some((column) => column.name === "summary")) await db.exec("ALTER TABLE conversations ADD COLUMN summary TEXT");
+      if (!columns.some((column) => column.name === "summaryUpdatedAt")) await db.exec("ALTER TABLE conversations ADD COLUMN summaryUpdatedAt DATETIME");
+      await db.exec(`
+        CREATE TABLE IF NOT EXISTS conversation_journeys (
+          conversationId TEXT PRIMARY KEY,
+          tenantId TEXT NOT NULL,
+          currentPage TEXT,
+          referrer TEXT,
+          visitedPages TEXT NOT NULL DEFAULT '[]',
+          userAgent TEXT,
+          updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (conversationId) REFERENCES conversations(id)
+        );
+        CREATE TABLE IF NOT EXISTS saved_replies (
+          id TEXT PRIMARY KEY,
+          tenantId TEXT NOT NULL,
+          shortcut TEXT NOT NULL,
+          title TEXT NOT NULL,
+          content TEXT NOT NULL,
+          createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE (tenantId, shortcut)
+        );
+        CREATE INDEX IF NOT EXISTS idx_saved_replies_tenant_shortcut ON saved_replies(tenantId, shortcut);
+      `);
+    },
+  },
+  {
+    id: "005_pause_ai_on_handover",
+    async up(db) {
+      await db.run("UPDATE conversations SET aiState = 'paused' WHERE status = 'transferred'");
+    },
+  },
 ];
 
 export async function runMigrations(db) {

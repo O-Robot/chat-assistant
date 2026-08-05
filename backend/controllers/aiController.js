@@ -221,6 +221,11 @@ User country: ${country || "Unknown"}
 Currency context: ${currencySymbol}`;
 }
 
+export async function generateAssistantText({ instructions, conversationHistory = [], maxTokens = 500 }) {
+  const prompt = `${instructions}\n\nUse UK English. Return only the requested text.`;
+  return generateWithFallback(conversationHistory.slice(-20), prompt, maxTokens);
+}
+
 //  * Generate using Google models
 async function generateWithGoogle(
   modelName,
@@ -278,7 +283,7 @@ async function generateWithGroq(modelName, conversationHistory, systemPrompt) {
 }
 
 //  * Try models in order with fallback
-async function generateWithFallback(conversationHistory, systemPrompt) {
+async function generateWithFallback(conversationHistory, systemPrompt, maxTokens = 500) {
   const candidates = pickModelCandidates();
 
   if (candidates.length === 0) {
@@ -341,11 +346,11 @@ export async function handleAIResponse(io, message) {
     const db = await openDB();
 
     const conversation = await db.get(
-      "SELECT status FROM conversations WHERE id = ?",
+      "SELECT status, aiState, tenantId FROM conversations WHERE id = ?",
       [conversationId],
     );
 
-    if (!conversation || conversation.status !== "open") {
+    if (!conversation || conversation.status !== "open" || conversation.aiState !== "active") {
       console.log(
         `[AI] Conversation ${conversationId} is transferred. Skipping AI.`,
       );
@@ -372,7 +377,9 @@ export async function handleAIResponse(io, message) {
       conversationId,
     });
 
-    const systemPrompt = buildSystemPrompt(user.firstName, user.country);
+    const journey = await db.get("SELECT currentPage, referrer, visitedPages FROM conversation_journeys WHERE conversationId = ? AND tenantId = ?", [conversationId, conversation.tenantId]);
+    const journeyContext = journey ? `\nVISITOR JOURNEY:\nCurrent page: ${journey.currentPage || "Unknown"}\nPreviously visited: ${journey.visitedPages || "[]"}\nReferrer: ${journey.referrer || "Direct"}` : "";
+    const systemPrompt = `${buildSystemPrompt(user.firstName, user.country)}${journeyContext}`;
 
     const aiResponse = await generateWithFallback(
       conversationHistory,
@@ -386,11 +393,11 @@ export async function handleAIResponse(io, message) {
     });
 
     const latestConversation = await db.get(
-      "SELECT status FROM conversations WHERE id = ?",
+      "SELECT status, aiState FROM conversations WHERE id = ?",
       [conversationId],
     );
 
-    if (!latestConversation || latestConversation.status !== "open") {
+    if (!latestConversation || latestConversation.status !== "open" || latestConversation.aiState !== "active") {
       console.log(
         `[AI] Transfer happened during generation. Dropping response.`,
       );

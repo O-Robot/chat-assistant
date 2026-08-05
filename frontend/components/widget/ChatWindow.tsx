@@ -793,6 +793,19 @@ export const ChatWindow = ({ onClose }: any) => {
             {messages.filter(Boolean).map((msg) => {
               const isUserMessage =
                 msg?.sender?.id === user?.id || msg?.senderId === user?.id;
+              const isTransferNotice =
+                msg?.senderId === "system" &&
+                /connected to Ogooluwani|connecting you to Ogooluwani|AI assistant.*resumed|Robot is assisting you again/i.test(msg.content || "");
+
+              if (isTransferNotice) {
+                return (
+                  <div key={msg.id} className="my-3 flex items-center gap-2" role="status">
+                    <span className="h-px flex-1 bg-gray-200 dark:bg-white/15" />
+                    <span className="max-w-[78%] text-center text-[11px] text-gray-500 dark:text-gray-400" dangerouslySetInnerHTML={{ __html: sanitizedContent(msg.content) }} />
+                    <span className="h-px flex-1 bg-gray-200 dark:bg-white/15" />
+                  </div>
+                );
+              }
 
               return (
                 <div
