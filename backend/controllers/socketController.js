@@ -476,7 +476,11 @@ export function handleSocketConnection(io, socket) {
         }
       }
       io.to(`conversation-${conversationId}`).emit("conversation_ai_state", { conversationId, aiState });
-      await recordAuditEvent(db, { tenantId: principal.tenantId, actorId: principal.id, actorRole: principal.role, action: `admin.ai.${aiState}`, resourceType: "conversation", resourceId: conversationId });
+      try {
+        await recordAuditEvent(db, { tenantId: principal.tenantId, actorId: principal.id, actorRole: principal.role, action: `admin.ai.${aiState}`, resourceType: "conversation", resourceId: conversationId });
+      } catch (auditError) {
+        logger.error("socket_ai_state_audit_error", { socketId: socket.id, tenantId: principal.tenantId, errorName: auditError.name, errorMessage: auditError.message });
+      }
       respond(acknowledge, { ok: true, aiState, status: aiState === "active" ? "open" : conversation.status });
     } catch (error) {
       logger.error("socket_ai_state_error", { socketId: socket.id, tenantId: principal.tenantId, errorName: error.name, errorMessage: error.message });

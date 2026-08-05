@@ -13,6 +13,7 @@ This document is a chronological development log for completed project phases.
 | P005 | 2026-07-31 | ✅ Completed | `feat(visitor): polish widget experience and conversation history` |
 | P006 | 2026-07-31 | ✅ Completed | `feat(admin): polish premium support inbox workspace` |
 | P006.1 | 2026-07-31 | ✅ Completed | `fix(admin): stabilise handover and conversation controls` |
+| P006.5 | 2026-08-05 | ✅ Completed | `feat(admin): improve takeover workflow and ai assisted replies` |
 | P007 | 2026-08-04 | ✅ Completed | `feat(admin): add inbox productivity and conversation intelligence` |
 | P008 | 2026-08-05 | ✅ Completed | `feat(ai): add remote assistant controls and Telegram adapter` |
 | P008.5 | 2026-08-05 | ✅ Completed | `feat(telegram): add visitor conversation channel` |
@@ -535,6 +536,42 @@ Pause the experimental Telegram visitor channel without altering the primary wid
 
 ```text
 chore(telegram): remove paused integration
+```
+
+</details>
+
+<details>
+<summary><strong>P006.5 — Admin Takeover Workflow and AI-Assisted Replies</strong></summary>
+
+### Objective
+
+Make AI the default conversation owner and require an explicit admin takeover before exposing reply controls.
+
+### Changes Made
+
+- Hid the admin composer while AI is active and added a clear observation state with a `Take over conversation` action.
+- Reused the existing authenticated Socket.IO AI pause/resume event for takeover and resume; no conversation or authentication contract changed.
+- Added clear header status for `AI active` and `Admin handling`, plus responsive takeover/resume controls.
+- Made takeover state optimistic in the admin UI and isolated audit-log failures from the Socket.IO acknowledgement, preventing a successful AI pause from showing a false error or requiring a page reload to reveal the composer.
+- Added quick-reply shortcuts for summary, pricing, contact, getting started, technologies, project process, and timeline; the AI-generated summary and all templates insert editable drafts only.
+- Added rewrite controls for professional, friendly, shorter, more detailed, and grammar-focused suggestions. Rewrites populate the draft and are never sent automatically.
+- Retained distinct visitor, Robot, and admin message identities and avatars in the conversation timeline.
+
+### Files Changed
+
+- `frontend/app/admin/page.tsx`
+- `backend/routes/admin.js`
+
+### Verification
+
+- Ran frontend TypeScript checks successfully.
+- Ran backend syntax checks and whitespace validation successfully.
+- Manual verification remains appropriate for the live Socket.IO takeover/resume flow with configured authentication.
+
+### Suggested Conventional Commit
+
+```text
+feat(admin): improve takeover workflow and ai assisted replies
 ```
 
 </details>

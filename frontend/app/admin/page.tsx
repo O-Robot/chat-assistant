@@ -45,6 +45,7 @@ import {
   Play,
   Search,
   Send,
+  Sparkles,
   Star,
   Trash2,
   X,
@@ -78,6 +79,16 @@ const formatRelativeTime = (value?: string) => {
 
 const isSameDay = (first: number, second: number) =>
   new Date(first).toDateString() === new Date(second).toDateString();
+
+const quickReplies = [
+  { shortcut: "/summary", label: "Summary", content: "Here’s a quick summary of how I can help. Could you share a little more about your goals and timeline?" },
+  { shortcut: "/pricing", label: "Pricing", content: "Project pricing depends on the scope, timeline, and technical requirements. Share a little about what you need and I’ll provide a tailored estimate." },
+  { shortcut: "/contact", label: "Contact", content: "You can reach Ogooluwani at hey@ogooluwaniadewale.com. Please include a short outline of your project, preferred timeline, and budget range." },
+  { shortcut: "/start", label: "Getting started", content: "To get started, share your project goals, the key features you need, your preferred timeline, and an estimated budget." },
+  { shortcut: "/technologies", label: "Technologies", content: "Projects are typically built with React, Next.js, TypeScript, Node.js, and modern cloud tooling. The stack is selected to fit the product’s needs." },
+  { shortcut: "/project", label: "Project process", content: "The process usually starts with discovery and scope, followed by design, development, feedback rounds, testing, and launch." },
+  { shortcut: "/timeline", label: "Timeline", content: "A project timeline depends on scope and feedback cycles. Once the requirements are clear, I can provide a realistic delivery plan." },
+];
 
 export default function AdminPage() {
   const router = useRouter();
@@ -138,6 +149,9 @@ export default function AdminPage() {
   const [isFocus, setFocus] = useState(false);
 
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [isUpdatingAI, setIsUpdatingAI] = useState(false);
+  const [isRewriting, setIsRewriting] = useState(false);
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [hasPlayedSound, setHasPlayedSound] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [loadStatus, setLoadStatus] = useState({
@@ -491,6 +505,10 @@ export default function AdminPage() {
     if (isInputEmpty) return;
     const activeConv = conversations[conversations.length - 1];
     if (!activeConv) return;
+    if (activeConv.aiState !== "paused") {
+      toast({ title: "Take over the conversation first", description: "Pause AI before sending an admin reply.", variant: "destructive" });
+      return;
+    }
     const draftUserId = selectedUserId;
 
     setIsSendingMessage(true);
@@ -596,15 +614,73 @@ export default function AdminPage() {
   };
 
   const setAIState = async (conversationId: string, aiState: "active" | "paused") => {
-    const result = await new Promise<{ ok?: boolean; error?: string; status?: string }>((resolve) => {
-      getSocket().timeout(10_000).emit("set_ai_state", { conversationId, aiState }, (error: Error | null, response?: { ok?: boolean; error?: string; status?: string }) => resolve(error ? { ok: false, error: "The request timed out" } : response || { ok: false }));
-    });
-    if (!result.ok) {
-      toast({ title: "Unable to update AI", description: result.error || "Please try again.", variant: "destructive" });
+    const previousConversation = conversations.find((conversation) => conversation.id === conversationId);
+    setIsUpdatingAI(true);
+    setConversations((previous) => previous.map((conversation) => conversation.id === conversationId ? { ...conversation, aiState } : conversation));
+    try {
+      const result = await new Promise<{ ok?: boolean; error?: string; status?: string; timedOut?: boolean }>((resolve) => {
+        getSocket().timeout(10_000).emit("set_ai_state", { conversationId, aiState }, (error: Error | null, response?: { ok?: boolean; error?: string; status?: string }) => resolve(error ? { ok: false, timedOut: true } : response || { ok: false }));
+      });
+      if (!result.ok && !result.timedOut) {
+        setConversations((previous) => previous.map((conversation) => conversation.id === conversationId ? { ...conversation, aiState: previousConversation?.aiState, status: previousConversation?.status || conversation.status } : conversation));
+        toast({ title: "Unable to update AI", description: result.error || "Please try again.", variant: "destructive" });
+        return false;
+      }
+      if (result.ok) {
+        setConversations((previous) => previous.map((conversation) => conversation.id === conversationId ? { ...conversation, aiState, status: result.status || conversation.status } : conversation));
+      }
+      toast({ title: aiState === "paused" ? "AI paused — you can reply now." : "AI resumed" });
+      return true;
+    } catch {
+      setConversations((previous) => previous.map((conversation) => conversation.id === conversationId ? { ...conversation, aiState: previousConversation?.aiState, status: previousConversation?.status || conversation.status } : conversation));
+      toast({ title: "Unable to update AI", description: "Please try again.", variant: "destructive" });
+      return false;
+    } finally {
+      setIsUpdatingAI(false);
+    }
+  };
+
+  const insertQuickReply = (content: string) => {
+    setInput(content);
+    if (selectedUserId) setDrafts((previous) => ({ ...previous, [selectedUserId]: content }));
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  const insertConversationSummary = async () => {
+    const activeConversation = conversations[conversations.length - 1];
+    if (!activeConversation) return;
+    setIsGeneratingSummary(true);
+    try {
+      const response = await adminApi.post(`/admin/chats/${activeConversation.id}/summary`);
+      const summary = response.data?.summary;
+      if (!summary) throw new Error("No summary returned");
+      insertQuickReply(summary);
+      toast({ title: "Summary inserted", description: "Review it before sending." });
+    } catch {
+      toast({ title: "Unable to create summary", description: "Please try again.", variant: "destructive" });
+    } finally {
+      setIsGeneratingSummary(false);
+    }
+  };
+
+  const rewriteDraft = async (mode: "professional" | "friendly" | "shorter" | "longer" | "grammar") => {
+    const draft = input.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim();
+    if (!draft) {
+      toast({ title: "Write a draft first", description: "AI can suggest a rewrite after you have written a reply.", variant: "destructive" });
       return;
     }
-    setConversations((previous) => previous.map((conversation) => conversation.id === conversationId ? { ...conversation, aiState, status: result.status || conversation.status } : conversation));
-    toast({ title: aiState === "paused" ? "AI paused" : "AI resumed" });
+    setIsRewriting(true);
+    try {
+      const response = await adminApi.post("/admin/ai/rewrite", { draft, mode });
+      const rewritten = response.data?.content;
+      if (!rewritten) throw new Error("No rewrite returned");
+      insertQuickReply(rewritten);
+      toast({ title: "Draft rewritten", description: "Review and edit it before sending." });
+    } catch {
+      toast({ title: "Unable to rewrite draft", description: "Please try again.", variant: "destructive" });
+    } finally {
+      setIsRewriting(false);
+    }
   };
 
   const applyBulkAction = async (
@@ -1369,6 +1445,11 @@ export default function AdminPage() {
                     />
                     {isUserOnline ? "Online now" : "Away"}
                   </p>
+                  {activeConversation && (
+                    <p className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${activeConversation.aiState === "paused" ? "bg-amber-50 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300" : "bg-violet-50 text-violet-700 dark:bg-violet-950/35 dark:text-violet-300"}`}>
+                      {activeConversation.aiState === "paused" ? "Admin handling" : "AI active"}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1433,11 +1514,13 @@ export default function AdminPage() {
                     <button
                       type="button"
                       onClick={() => setAIState(activeConversation.id, activeConversation.aiState === "paused" ? "active" : "paused")}
-                      className={`rounded-lg p-2 transition hover:bg-slate-100 dark:hover:bg-slate-800 ${activeConversation.aiState === "paused" ? "text-slate-400" : "text-violet-600"}`}
-                      aria-label={activeConversation.aiState === "paused" ? "Resume AI" : "Pause AI"}
-                      title={activeConversation.aiState === "paused" ? "Resume AI" : "Pause AI"}
+                      disabled={isUpdatingAI || activeConversation.status === "closed"}
+                      className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50 ${activeConversation.aiState === "paused" ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/35 dark:text-emerald-300" : "bg-violet-50 text-violet-700 hover:bg-violet-100 dark:bg-violet-950/35 dark:text-violet-300"}`}
+                      aria-label={activeConversation.aiState === "paused" ? "Resume AI" : "Take over conversation"}
+                      title={activeConversation.aiState === "paused" ? "Resume AI" : "Take over conversation"}
                     >
-                      {activeConversation.aiState === "paused" ? <Play size={18} /> : <Pause size={18} />}
+                      {isUpdatingAI ? <Loader2 size={16} className="animate-spin" /> : activeConversation.aiState === "paused" ? <Play size={16} /> : <Pause size={16} />}
+                      {activeConversation.aiState === "paused" ? "Resume AI" : "Take over"}
                     </button>
 
                     <button
@@ -1795,10 +1878,44 @@ export default function AdminPage() {
               </div>
             )}
 
+            {activeConversation &&
+              activeConversation.status !== "closed" &&
+              activeConversation.aiState !== "paused" && (
+                <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="mx-auto flex max-w-3xl flex-col gap-2 rounded-xl border border-violet-100 bg-violet-50/70 px-3 py-2.5 text-sm text-violet-900 dark:border-violet-900/60 dark:bg-violet-950/25 dark:text-violet-100 sm:flex-row sm:items-center sm:justify-between">
+                    <span><strong>AI Active.</strong> Robot is responding to this visitor. Take over when you need to reply personally.</span>
+                    <button
+                      type="button"
+                      onClick={() => setAIState(activeConversation.id, "paused")}
+                      disabled={isUpdatingAI}
+                      className="shrink-0 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isUpdatingAI ? "Taking over…" : "Take over conversation"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
             {/* Input */}
             {conversations.length > 0 &&
-              conversations[conversations.length - 1]?.status !== "closed" && (
+              conversations[conversations.length - 1]?.status !== "closed" &&
+              conversations[conversations.length - 1]?.aiState === "paused" && (
                 <div className="shrink-0 border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900 sm:p-4">
+                  <div className="mx-auto mb-3 flex max-w-3xl flex-wrap items-center gap-2">
+                    <span className="mr-1 text-xs font-medium text-slate-500">Quick replies</span>
+                    {quickReplies.map((reply) => (
+                      <button
+                        key={reply.shortcut}
+                        type="button"
+                        onClick={() => reply.shortcut === "/summary" ? insertConversationSummary() : insertQuickReply(reply.content)}
+                        disabled={reply.shortcut === "/summary" && isGeneratingSummary}
+                        className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:border-primary/30 hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:border-slate-700 dark:text-slate-300 dark:hover:bg-primary/10"
+                        title={`Insert ${reply.shortcut}`}
+                      >
+                        {reply.shortcut === "/summary" && isGeneratingSummary ? "Generating…" : reply.shortcut}
+                      </button>
+                    ))}
+                  </div>
                   <div className="mx-auto flex max-w-3xl flex-col items-end gap-2 sm:flex-row">
                     <div className="flex-1 min-w-0 rich-text-wrapper">
                       <ReactQuill
@@ -1837,6 +1954,26 @@ export default function AdminPage() {
                         <ArrowUp size={20} />
                       )}
                     </button>
+                  </div>
+                  <div className="mx-auto mt-2 flex max-w-3xl flex-wrap items-center gap-1.5">
+                    <span className="mr-1 inline-flex items-center gap-1 text-xs font-medium text-violet-700 dark:text-violet-300"><Sparkles size={13} /> Rewrite with AI</span>
+                    {[
+                      ["professional", "Professional"],
+                      ["friendly", "Friendly"],
+                      ["shorter", "Shorter"],
+                      ["longer", "More detailed"],
+                      ["grammar", "Fix grammar"],
+                    ].map(([mode, label]) => (
+                      <button
+                        key={label}
+                        type="button"
+                        disabled={isRewriting || isInputEmpty}
+                        onClick={() => rewriteDraft(mode as "professional" | "friendly" | "shorter" | "longer" | "grammar")}
+                        className="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-violet-950/35 dark:text-violet-300 dark:hover:bg-violet-950/55"
+                      >
+                        {isRewriting ? "Rewriting…" : label}
+                      </button>
+                    ))}
                   </div>
                   <p className="mx-auto mt-1.5 max-w-3xl text-xs text-slate-400">
                     Press{" "}

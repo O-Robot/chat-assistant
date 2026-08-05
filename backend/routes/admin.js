@@ -45,7 +45,7 @@ router.post("/ai/rewrite", async (req, res) => {
   try {
     const { draft, mode = 'professional', language = 'English' } = req.body || {};
     if (typeof draft !== 'string' || !draft.trim() || draft.length > 4000) return res.status(400).json({ error: "A draft of up to 4,000 characters is required" });
-    const modes = { professional: 'professional and clear', friendly: 'warm and friendly', shorter: 'shorter while preserving meaning', longer: 'more detailed but concise' };
+    const modes = { professional: 'professional and clear', friendly: 'warm and friendly', shorter: 'shorter while preserving meaning', longer: 'more detailed but concise', grammar: 'grammatically correct while preserving the original tone and meaning' };
     if (!modes[mode]) return res.status(400).json({ error: "Invalid rewrite mode" });
     const content = await generateAssistantText({ instructions: `Rewrite the following reply to be ${modes[mode]}. Translate it to ${language} when that is not English. Preserve facts and do not add commitments.\n\nDRAFT:\n${draft}`, conversationHistory: [] });
     res.json({ content });
