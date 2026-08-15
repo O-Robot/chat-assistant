@@ -1,9 +1,9 @@
-import { openDB } from "../db.js";
-import { sendAIMessage, sendSystemMessage } from "../utils/systemMessages.js";
 import { GoogleGenAI } from "@google/genai";
 import Groq from "groq-sdk";
-import { setPendingTransfer } from "./socketController.js";
+import { openDB } from "../db.js";
 import { logger } from "../utils/logger.js";
+import { sendAIMessage, sendSystemMessage } from "../utils/systemMessages.js";
+import { setPendingTransfer } from "./socketController.js";
 
 const aiRespondingState = new Map();
 const aiRequestWindows = new Map();
@@ -12,13 +12,17 @@ const AI_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS || 25_000);
 function withTimeout(promise, timeoutMs) {
   return Promise.race([
     promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error("AI request timed out")), timeoutMs)),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("AI request timed out")), timeoutMs),
+    ),
   ]);
 }
 
 function isAiRateLimited(senderId) {
   const now = Date.now();
-  const active = (aiRequestWindows.get(senderId) || []).filter((timestamp) => now - timestamp < 60_000);
+  const active = (aiRequestWindows.get(senderId) || []).filter(
+    (timestamp) => now - timestamp < 60_000,
+  );
   active.push(now);
   aiRequestWindows.set(senderId, active);
   return active.length > 8;
@@ -28,23 +32,31 @@ let genAI;
 let groq;
 
 function getGoogleClient() {
-  if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured");
+  if (!process.env.GEMINI_API_KEY)
+    throw new Error("GEMINI_API_KEY is not configured");
   genAI ||= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   return genAI;
 }
 
 function getGroqClient() {
-  if (!process.env.GROQ_API_KEY) throw new Error("GROQ_API_KEY is not configured");
+  if (!process.env.GROQ_API_KEY)
+    throw new Error("GROQ_API_KEY is not configured");
   groq ||= new Groq({ apiKey: process.env.GROQ_API_KEY });
   return groq;
 }
 
 const MODEL_POOL = [
   {
-    name: "llama-3.1-8b-instant",
+    name: "openai/gpt-oss-20b",
     provider: "groq",
-    maxPerDay: 14400,
+    maxPerDay: 1000,
     role: "primary",
+  },
+  {
+    name: "openai/gpt-oss-120b",
+    provider: "groq",
+    maxPerDay: 1000,
+    role: "premium",
   },
   {
     name: "meta-llama/llama-4-scout-17b-16e-instruct",
@@ -65,7 +77,6 @@ const MODEL_POOL = [
     role: "backup",
   },
 
-  // ---- GOOGLE MODELS ----
   {
     name: "gemini-2.5-flash",
     provider: "google",
@@ -90,7 +101,6 @@ const MODEL_POOL = [
     maxPerDay: 14400,
     role: "google-cheap-2",
   },
-
   {
     name: "gemma-3-27b-it",
     provider: "google",
@@ -251,9 +261,17 @@ User country: ${country || "Unknown"}
 Currency context: ${currencySymbol}`;
 }
 
-export async function generateAssistantText({ instructions, conversationHistory = [], maxTokens = 500 }) {
+export async function generateAssistantText({
+  instructions,
+  conversationHistory = [],
+  maxTokens = 500,
+}) {
   const prompt = `${instructions}\n\nUse UK English. Return only the requested text.`;
-  return generateWithFallback(conversationHistory.slice(-20), prompt, maxTokens);
+  return generateWithFallback(
+    conversationHistory.slice(-20),
+    prompt,
+    maxTokens,
+  );
 }
 
 //  * Generate using Google models
@@ -313,7 +331,11 @@ async function generateWithGroq(modelName, conversationHistory, systemPrompt) {
 }
 
 //  * Try models in order with fallback
-async function generateWithFallback(conversationHistory, systemPrompt, maxTokens = 500) {
+async function generateWithFallback(
+  conversationHistory,
+  systemPrompt,
+  maxTokens = 500,
+) {
   const candidates = pickModelCandidates();
 
   if (candidates.length === 0) {
@@ -327,17 +349,15 @@ async function generateWithFallback(conversationHistory, systemPrompt, maxTokens
       let response = "";
 
       if (model.provider === "google") {
-        response = await withTimeout(generateWithGoogle(
-          model.name,
-          conversationHistory,
-          systemPrompt,
-        ), AI_TIMEOUT_MS);
+        response = await withTimeout(
+          generateWithGoogle(model.name, conversationHistory, systemPrompt),
+          AI_TIMEOUT_MS,
+        );
       } else {
-        response = await withTimeout(generateWithGroq(
-          model.name,
-          conversationHistory,
-          systemPrompt,
-        ), AI_TIMEOUT_MS);
+        response = await withTimeout(
+          generateWithGroq(model.name, conversationHistory, systemPrompt),
+          AI_TIMEOUT_MS,
+        );
       }
 
       if (response && response.trim()) {
@@ -371,13 +391,26 @@ export async function handleAIResponse(io, message) {
   }
 
   if (isAiRateLimited(senderId)) {
-    logger.warn("ai_request_failed", { conversationId, senderId, state: "AI_FAILED", reason: "rate_limited" });
-    await sendAIMessage(io, conversationId, "I’ve received several messages quickly. Please give me a moment, then send your next message.");
+    logger.warn("ai_request_failed", {
+      conversationId,
+      senderId,
+      state: "AI_FAILED",
+      reason: "rate_limited",
+    });
+    await sendAIMessage(
+      io,
+      conversationId,
+      "I’ve received several messages quickly. Please give me a moment, then send your next message.",
+    );
     return;
   }
 
   aiRespondingState.set(conversationId, true);
-  logger.info("ai_request_started", { conversationId, senderId, state: "AI_PENDING" });
+  logger.info("ai_request_started", {
+    conversationId,
+    senderId,
+    state: "AI_PENDING",
+  });
 
   try {
     const db = await openDB();
@@ -387,7 +420,11 @@ export async function handleAIResponse(io, message) {
       [conversationId],
     );
 
-    if (!conversation || conversation.status !== "open" || conversation.aiState !== "active") {
+    if (
+      !conversation ||
+      conversation.status !== "open" ||
+      conversation.aiState !== "active"
+    ) {
       console.log(
         `[AI] Conversation ${conversationId} is transferred. Skipping AI.`,
       );
@@ -414,8 +451,13 @@ export async function handleAIResponse(io, message) {
       conversationId,
     });
 
-    const journey = await db.get("SELECT currentPage, referrer, visitedPages FROM conversation_journeys WHERE conversationId = ? AND tenantId = ?", [conversationId, conversation.tenantId]);
-    const journeyContext = journey ? `\nVISITOR JOURNEY:\nCurrent page: ${journey.currentPage || "Unknown"}\nPreviously visited: ${journey.visitedPages || "[]"}\nReferrer: ${journey.referrer || "Direct"}` : "";
+    const journey = await db.get(
+      "SELECT currentPage, referrer, visitedPages FROM conversation_journeys WHERE conversationId = ? AND tenantId = ?",
+      [conversationId, conversation.tenantId],
+    );
+    const journeyContext = journey
+      ? `\nVISITOR JOURNEY:\nCurrent page: ${journey.currentPage || "Unknown"}\nPreviously visited: ${journey.visitedPages || "[]"}\nReferrer: ${journey.referrer || "Direct"}`
+      : "";
     const systemPrompt = `${buildSystemPrompt(user.firstName, user.country)}${journeyContext}`;
 
     const aiResponse = await generateWithFallback(
@@ -434,7 +476,11 @@ export async function handleAIResponse(io, message) {
       [conversationId],
     );
 
-    if (!latestConversation || latestConversation.status !== "open" || latestConversation.aiState !== "active") {
+    if (
+      !latestConversation ||
+      latestConversation.status !== "open" ||
+      latestConversation.aiState !== "active"
+    ) {
       console.log(
         `[AI] Transfer happened during generation. Dropping response.`,
       );
@@ -454,10 +500,20 @@ export async function handleAIResponse(io, message) {
     // Send message
     if (aiResponse) {
       await sendAIMessage(io, conversationId, aiResponse);
-      logger.info("ai_request_completed", { conversationId, senderId, state: "AI_COMPLETED" });
+      logger.info("ai_request_completed", {
+        conversationId,
+        senderId,
+        state: "AI_COMPLETED",
+      });
     }
   } catch (error) {
-    logger.error("ai_request_failed", { conversationId, senderId, state: "AI_FAILED", errorName: error.name, errorMessage: error.message });
+    logger.error("ai_request_failed", {
+      conversationId,
+      senderId,
+      state: "AI_FAILED",
+      errorName: error.name,
+      errorMessage: error.message,
+    });
 
     io.to(`conversation-${conversationId}`).emit("user_stopped_typing", {
       id: "system",
