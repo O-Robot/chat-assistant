@@ -1,13 +1,11 @@
 import express from "express";
-import { loginAdmin, authenticateAdmin } from "../middleware/adminAuth.js";
+import { loginAdmin, authenticateAdmin, getAdminSessionCookieOptions } from "../middleware/adminAuth.js";
 import { openDB } from "../db.js";
 import { getDefaultTenantId, verifyToken } from "../middleware/auth.js";
 import { recordAuditEvent } from "../utils/audit.js";
 import { logger } from "../utils/logger.js";
 
 const router = express.Router();
-const isProduction = process.env.NODE_ENV === "production";
-
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
@@ -19,13 +17,9 @@ router.post("/login", async (req, res) => {
     const result = await loginAdmin(email, password);
 
     if (result.success) {
-      res.cookie("whoami", result.token, {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "none" : "lax",
-        path: "/",
+      res.cookie("whoami", result.token, getAdminSessionCookieOptions({
         maxAge: 3 * 24 * 60 * 60 * 1000,
-      });
+      }));
 
       const db = await openDB();
       await recordAuditEvent(db, {
@@ -62,12 +56,7 @@ router.post("/logout", async (req, res) => {
   } catch {
     // Expired or invalid tokens still receive a clear-cookie response.
   }
-  res.clearCookie("whoami", {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
-    path: "/",
-  });
+  res.clearCookie("whoami", getAdminSessionCookieOptions());
   res.json({ success: true, message: "Logged out" });
 });
 

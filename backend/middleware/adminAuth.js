@@ -8,6 +8,22 @@ import { randomUUID } from "crypto";
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH; // Change this!
+const ADMIN_COOKIE_DOMAIN = process.env.ADMIN_COOKIE_DOMAIN?.trim();
+
+// Leave the domain unset for local development. In production deployments where
+// the frontend and API use sibling subdomains, set ADMIN_COOKIE_DOMAIN to the
+// shared parent domain (for example, `.ogo.com`) so Next.js can read the
+// HttpOnly cookie in its route proxy.
+export function getAdminSessionCookieOptions({ maxAge } = {}) {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    path: "/",
+    ...(ADMIN_COOKIE_DOMAIN ? { domain: ADMIN_COOKIE_DOMAIN } : {}),
+    ...(maxAge ? { maxAge } : {}),
+  };
+}
 
 export async function isAdminSessionActive(principal) {
   if (!principal?.sessionId) return false;
@@ -34,7 +50,7 @@ export async function authenticateAdmin(req, res, next) {
       return res.status(403).json({ message: "Forbidden" });
     }
     if (!(await isAdminSessionActive(decoded))) {
-      res.clearCookie("whoami", { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", path: "/" });
+      res.clearCookie("whoami", getAdminSessionCookieOptions());
       return res.status(401).json({ message: "Session expired" });
     }
     req.admin = decoded;
